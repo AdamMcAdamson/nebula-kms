@@ -1,7 +1,7 @@
----
+```js
 
-This is a general outline of the endpoints we need to implement for the KMS service.
-These endpoints are not final.
+// This is a general outline of the endpoints we need to implement for the KMS service.
+// These endpoints are not final.
 
 
 GET /allowed
@@ -161,7 +161,7 @@ Return:
 }
 
 
-*
+// *TBD
 GET /logs
 FROM DeveloperPortalBackend
 {
@@ -173,4 +173,4 @@ Return:
 }
 
 
----
+```
