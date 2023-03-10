@@ -1,4 +1,4 @@
-module example.com/changeme
+module github.com/UTDNebula/KMS
 
 go 1.19
 

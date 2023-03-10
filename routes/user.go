@@ -1,8 +1,9 @@
 package routes
 
 import (
+	"github.com/UTDNebula/KMS/controllers"
+
 	"github.com/gin-gonic/gin"
-	// controllers
 )
 
 func UserRoute(router *gin.Engine) {
@@ -12,7 +13,9 @@ func UserRoute(router *gin.Engine) {
 
 	// Enable CORS
 
-	// User Keys
+	// Get User Keys
+	userGroup.GET("/keys", controllers.GetUserKeys())
+
 	// User Type
 	// Privileged User Data
 

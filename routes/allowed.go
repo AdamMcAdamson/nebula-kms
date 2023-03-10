@@ -1,17 +1,14 @@
 package routes
 
 import (
+	"github.com/UTDNebula/KMS/controllers"
+
 	"github.com/gin-gonic/gin"
-	// controllers
 )
 
 func AllowedRoute(router *gin.Engine) {
 
-	// All routes related to users come here
-	allowedGroup := router.Group("/allowed")
-
-	// Enable CORS
-
-	// Allowed
+	// All KMS Keys are verified through the allowed route
+	router.GET("/allowed", controllers.Allowed())
 
 }

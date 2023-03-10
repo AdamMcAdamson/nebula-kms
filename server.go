@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/UTDNebula/KMS/routes"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -13,11 +15,9 @@ func main() {
 	router := gin.Default()
 
 	// Connect Routes
-	// routes.CourseRoute(router)
-	// routes.DegreeRoute(router)
-	// routes.ExamRoute(router)
-	// routes.SectionRoute(router)
-	// routes.ProfessorRoute(router)
+	routes.AllowedRoute(router)
+	routes.KeyRoute(router)
+	routes.UserRoute(router)
 
 	// Retrieve the port string to serve traffic on
 	//portString := configs.GetPortString()

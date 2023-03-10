@@ -1,8 +1,9 @@
 package routes
 
 import (
+	"github.com/UTDNebula/KMS/controllers"
+
 	"github.com/gin-gonic/gin"
-	// controllers
 )
 
 func KeyRoute(router *gin.Engine) {
@@ -13,6 +14,8 @@ func KeyRoute(router *gin.Engine) {
 	// Enable CORS
 
 	// Create Basic Key
+	keyGroup.POST("/create-basic-key", controllers.CreateBasicKey())
+
 	// Create Advanced Key
 	// Delete Key
 	// Disable Key
