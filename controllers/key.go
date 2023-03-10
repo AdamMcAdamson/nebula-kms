@@ -11,6 +11,6 @@ import (
 func CreateBasicKey() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
-		c.JSON(http.StatusOK, responses.CreateBasicKeyResponse{Status: http.StatusOK, Message: "success", Data: nil})
+		c.JSON(http.StatusNotImplemented, responses.CreateBasicKeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
 	}
 }
