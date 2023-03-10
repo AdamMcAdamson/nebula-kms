@@ -8,7 +8,7 @@ import (
 
 func AllowedRoute(router *gin.Engine) {
 
-	// All KMS Keys are verified through the allowed route
+	// All KMS Keys are verified through the allowed endpoint
 	router.GET("/allowed", controllers.Allowed())
 
 }
