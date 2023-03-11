@@ -3,6 +3,17 @@
 // This is a general outline of the endpoints we need to implement for the KMS service.
 // These endpoints are not final.
 
+// @TODO
+/*
+Endpoints for managing keys (existing keys):
+    Restore Quota
+    Change Service
+    Assign a key to a different key holder
+*/
+
+/*
+Send last modified timestamp in each patch request and send 409s if it doesn't match
+*/
 
 GET /allowed
 FROM gateway
@@ -84,7 +95,6 @@ FROM DeveloperPortalBackend
 Return:
 {
     Key_Mongo_OID,
-    Name,
     Key,
     Timed_Quota,
     Usage_Remaining,
@@ -99,7 +109,8 @@ FROM DeveloperPortalBackend
     RecipientUserID,
     Service_Mongo_OID,
     Quota,
-    Quota_Interval_Type
+    Quota_Interval_Type,
+    Name
 }
 Return:
 {
@@ -159,7 +170,6 @@ Return:
     Quota_Timestamp,
     Last_Modified
 }
-
 
 // *TBD
 GET /logs
