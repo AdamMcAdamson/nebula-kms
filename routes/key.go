@@ -37,4 +37,12 @@ func KeyRoute(router *gin.Engine) {
 	// Set Quota for a Key
 	keyGroup.PATCH("/set-quota", controllers.SetKeyQuota())
 
+	// Restore Quota for a Key
+	keyGroup.PATCH("/restore-quota", controllers.RestoreKeyQuota())
+
+	// Change Key Holder
+	keyGroup.PATCH("/change-holder", controllers.ChangeKeyHolder())
+
+	// Change Key Service
+	keyGroup.PATCH("/change-service", controllers.ChangeKeyService())
 }

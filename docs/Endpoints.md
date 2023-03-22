@@ -1,19 +1,7 @@
 ```js
 
 // This is a general outline of the endpoints we need to implement for the KMS service.
-// These endpoints are not final.
-
-// @TODO
-/*
-Endpoints for managing keys (existing keys):
-    Restore Quota
-    Change Service
-    Assign a key to a different key holder
-*/
-
-/*
-Send last modified timestamp in each patch request and send 409s if it doesn't match
-*/
+// These endpoints are not final, but their functionality is well defined.
 
 GET /allowed
 FROM gateway
@@ -65,26 +53,28 @@ FROM DeveloperPortalBackend
 {
     UserID,
     Key_Mongo_OID,
-    NewName
+    NewName,
+    Last_Modified
 }
 Return:
 {
     Name,
     Last_Modified
-}
+}, {409}// old Last_Modified
 
 
 PATCH /Regenerate-Key
 FROM DeveloperPortalBackend
 {
     UserID,
-    Key_Mongo_OID
+    Key_Mongo_OID,
+    Last_Modified
 }
 Return:
 {
     Key,
     Last_Modified
-}
+}, {409}// old Last_Modified
 
 
 POST /Create-Basic-Key
@@ -98,7 +88,8 @@ Return:
     Key,
     Timed_Quota,
     Usage_Remaining,
-    Key_Created
+    Key_Created,
+    Last_Modified
 }
 
 
@@ -116,7 +107,8 @@ Return:
 {
     Key_Mongo_OID,
     Name,
-    Key_Created
+    Key_Created,
+    Last_Modified
 }
 
 
@@ -136,24 +128,28 @@ PATCH /Disable-Key
 FROM DeveloperPortalBackend
 {
     UserID,
-    Key_Mongo_OID
+    Key_Mongo_OID,
+    Last_Modified
 }
 Return:
 {
-    "Success" | "Error"
-}
+    "Success" | "Error",
+    Last_Modified
+}, {409}// old Last_Modified
 
 
 PATCH /Enable-Key
 FROM DeveloperPortalBackend
 {
     UserID,
-    Key_Mongo_OID
+    Key_Mongo_OID,
+    Last_Modified
 }
 Return:
 {
-    "Success" | "Error"
-}
+    "Success" | "Error",
+    Last_Modified
+}, {409}// old Last_Modified
 
 
 PATCH /Set-Key-Quota
@@ -162,14 +158,61 @@ FROM DeveloperPortalBackend
     UserID,
     Key_Mongo_OID,
     Quota,
-    Quota_Interval_Type
+    Quota_Interval_Type,
+    Last_Modified
 }
 Return:
 {
     Usage_Remaining,
     Quota_Timestamp,
     Last_Modified
+}, {409}// old Last_Modified
+
+PATCH /Restore-Key-Quota
+FROM DeveloperPortalBackend
+{
+    UserID,
+    Key_Mongo_OID,
+    Last_Modified
 }
+Return:
+{
+    Usage_Remaining,
+    Quota_Timestamp,
+    Last_Modified
+}, {409}// old Last_Modified
+
+PATCH /Key-Change-Service
+FROM DeveloperPortalBackend
+{
+    UserID,
+    Key_Mongo_OID,
+    Service_Mongo_OID,
+    Last_Modified
+}
+Return:
+{
+    Service_Mongo_OID,
+    Last_Modified
+}, {409}// old Last_Modified
+
+
+PATCH /Change-Key-Holder
+FROM DeveloperPortalBackend
+{
+    AssignerUserID,
+    RecipientUserID,
+    Key_Mongo_OID,
+    Last_Modified,
+    Name
+}
+Return:
+{
+    Key_Mongo_OID,
+    Name,
+    Last_Modified
+}, {409}// old Last_Modified
+
 
 // *TBD
 GET /logs
