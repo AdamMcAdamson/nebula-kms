@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"github.com/UTDNebula/KMS/controllers"
+	"github.com/UTDNebula/kms/controllers"
 
 	"github.com/gin-gonic/gin"
 )

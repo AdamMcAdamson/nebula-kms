@@ -3,7 +3,7 @@ package controllers
 import (
 	"net/http"
 
-	"github.com/UTDNebula/KMS/responses"
+	"github.com/UTDNebula/kms/responses"
 
 	"github.com/gin-gonic/gin"
 )

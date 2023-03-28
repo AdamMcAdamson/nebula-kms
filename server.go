@@ -1,7 +1,8 @@
 package main
 
 import (
-	"github.com/UTDNebula/KMS/routes"
+	"github.com/UTDNebula/kms/configs"
+	"github.com/UTDNebula/kms/routes"
 
 	"github.com/gin-gonic/gin"
 )
@@ -23,7 +24,6 @@ func main() {
 	//portString := configs.GetPortString()
 
 	// Serve Traffic
-	const portString string = ":8080"
+	portString := configs.GetPortString()
 	router.Run(portString)
-
 }
