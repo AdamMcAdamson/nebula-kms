@@ -10,6 +10,6 @@ import (
 
 func Allowed() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, responses.CreateBasicKeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
+		c.JSON(http.StatusNotImplemented, responses.AllowedResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
 	}
 }
