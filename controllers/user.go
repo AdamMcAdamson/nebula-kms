@@ -8,6 +8,7 @@ import (
 	"github.com/UTDNebula/kms/configs"
 	"github.com/UTDNebula/kms/models"
 	"github.com/UTDNebula/kms/responses"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 
@@ -24,7 +25,25 @@ func GetUserKeys() gin.HandlerFunc {
 
 func GetUserType() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, responses.UserResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
+
+		var user models.User
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		objID, err := primitive.ObjectIDFromHex(c.Query("user_id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.UserResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		err = userCollection.FindOne(ctx, bson.M{"_id": objID}).Decode(&user)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.UserResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, responses.UserResponse{Status: http.StatusOK, Message: "success", Data: user.Type})
 	}
 }
 
@@ -37,10 +56,10 @@ func GetPrivilegedUserData() gin.HandlerFunc {
 func CreateUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
+		var newUser models.User
+
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-
-		var newUser models.User
 
 		if err := c.BindJSON(&newUser); err != nil {
 			c.JSON(http.StatusBadRequest, responses.UserResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
