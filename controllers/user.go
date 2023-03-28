@@ -60,8 +60,6 @@ func CreateUser() gin.HandlerFunc {
 		newUser.Keys = []primitive.ObjectID{}
 		newUser.Services = nil
 
-		// log.Printf("%v", &newUser)
-
 		_, err := userCollection.InsertOne(ctx, newUser)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.UserResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
