@@ -9,9 +9,6 @@ import (
 
 func main() {
 
-	// Establish the connection to the database
-	//configs.ConnectDB()
-
 	// Configure Gin Router
 	router := gin.Default()
 
@@ -21,9 +18,9 @@ func main() {
 	routes.UserRoute(router)
 
 	// Retrieve the port string to serve traffic on
-	//portString := configs.GetPortString()
+	portString := configs.GetPortString()
 
 	// Serve Traffic
-	portString := configs.GetPortString()
 	router.Run(portString)
+
 }
