@@ -22,4 +22,7 @@ func UserRoute(router *gin.Engine) {
 	// Privileged User Data
 	userGroup.GET("/priviledged-data", controllers.GetPrivilegedUserData())
 
+	// Create User
+	userGroup.POST("/create", controllers.CreateUser())
+
 }

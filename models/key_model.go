@@ -1,6 +1,10 @@
 package models
 
-import "go.mongodb.org/mongo-driver/bson/primitive"
+import (
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
 
 // Key represents data about a KMS Key
 type Key struct {
@@ -11,8 +15,8 @@ type Key struct {
 	Quota          int                `json:"quota" bson:"quota"`
 	QuotaType      string             `json:"quota_type" bson:"quota_type"` // @TODO: Enum (?) (Daily, etc...)
 	UsageRemaining int                `json:"usage_remaining" bson:"usage_remaining"`
-	QuotaTimestamp primitive.DateTime `json:"quota_timestamp" bson:"quota_timestamp"`
-	CreatedAt      primitive.DateTime `json:"created_at" bson:"created_at"`
-	LastModified   primitive.DateTime `json:"last_modified" bson:"last_modified"`
+	QuotaTimestamp time.Time          `json:"quota_timestamp" bson:"quota_timestamp"`
+	CreatedAt      time.Time          `json:"created_at" bson:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at" bson:"updated_at"`
 	IsActive       bool               `json:"is_active" bson:"is_active"`
 }
