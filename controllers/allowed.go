@@ -28,7 +28,7 @@ func Allowed() gin.HandlerFunc {
 
 		// @TODO: Handle Basic Keys (must address comments in key_model.go)
 
-		// @TODO: Change into aggregation pipeline instead of two finds
+		// @TODO: Change into aggregation pipeline instead of two finds and an update
 		// Find Key
 		err := keyCollection.FindOne(ctx, bson.D{{Key: "key", Value: authKey}}).Decode(&key)
 		if err != nil {
@@ -42,10 +42,19 @@ func Allowed() gin.HandlerFunc {
 			return
 		}
 
+		if key.UsageRemaining == 0 {
+			c.JSON(http.StatusOK, responses.AllowedResponse{Status: http.StatusOK, Message: "Quota reached", IsAllowed: false})
+			return
+		}
+
+		if !key.IsActive {
+			c.JSON(http.StatusOK, responses.AllowedResponse{Status: http.StatusOK, Message: "Key is disabled", IsAllowed: false})
+			return
+		}
+
 		// Find Service Key is for
 		err = serviceCollection.FindOne(ctx, bson.D{{Key: "_id", Value: key.ServiceID}}).Decode(&service)
 		if err != nil {
-			// Unknown Service. Should never occur
 			c.JSON(http.StatusInternalServerError, responses.AllowedResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error(), IsAllowed: false})
 			return
 		}
@@ -57,6 +66,17 @@ func Allowed() gin.HandlerFunc {
 			return
 		}
 
+		key.UsageRemaining -= 1
+
+		// Update key's usage remaining
+		updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}, {Key: "usage_remaining", Value: key.UsageRemaining}}}}
+		_, err = keyCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: key.ID}}, updateKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.AllowedResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error(), IsAllowed: false})
+			return
+		}
+
+		// @TODO: Decide if we want to move this before we update the key's usage remaining (assume it will be successful) to minimize latency
 		// Authorization Granted
 		c.JSON(http.StatusOK, responses.AllowedResponse{Status: http.StatusOK, Message: "success", IsAllowed: true})
 	}
