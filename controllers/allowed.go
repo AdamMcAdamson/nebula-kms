@@ -21,7 +21,7 @@ func Allowed() gin.HandlerFunc {
 		var service models.Service
 
 		authKey := c.GetHeader("Authorization")
-		sourceIdentifier := c.GetHeader("SourceIdentifier")
+		sourceIdentifier := c.GetHeader("RequestedService")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -62,7 +62,7 @@ func Allowed() gin.HandlerFunc {
 		// Verify valid sourceIdentifier
 		if !slices.Contains(service.SourceIdentifiers, sourceIdentifier) {
 			// @TODO: Make sure we want to respond like this. This means that the key is valid, just not for this service.
-			c.JSON(http.StatusOK, responses.AllowedResponse{Status: http.StatusOK, Message: "Invalid source-identifier", IsAllowed: false})
+			c.JSON(http.StatusOK, responses.AllowedResponse{Status: http.StatusOK, Message: "Invalid RequestedService", IsAllowed: false})
 			return
 		}
 
