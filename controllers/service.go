@@ -62,6 +62,6 @@ func CreateService() gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusAccepted, responses.ServiceResponse{Status: http.StatusAccepted, Message: "success", Data: newService})
+		c.JSON(http.StatusCreated, responses.ServiceResponse{Status: http.StatusCreated, Message: "success", Data: newService})
 	}
 }
