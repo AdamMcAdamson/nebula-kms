@@ -37,20 +37,17 @@ func CreateBasicKey() gin.HandlerFunc {
 		// Verify userID is valid (user exists)
 		err = userCollection.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
 		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid user_id"})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
 			return
 		}
 
-		// Verify user has no basic keys
-		var res bson.M
-		err = keyCollection.FindOne(ctx, bson.D{{Key: "owner_id", Value: userID}, {Key: "key_type", Value: "Basic"}}).Decode(&res)
-		if err != mongo.ErrNoDocuments && err != nil {
-			// Normal Error
-			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
-			return
-		} else if err == nil {
-			// User already has a basic key
-			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "User already has a basic key."})
+		// Verify user has no basic key
+		if user.BasicKey != primitive.NilObjectID {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "User already has a basic key"})
 			return
 		}
 
@@ -76,8 +73,7 @@ func CreateBasicKey() gin.HandlerFunc {
 		}
 
 		// Update user with new key
-		updateUser := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}}}, {Key: "$push", Value: bson.D{{Key: "keys", Value: key.ID}}}}
-
+		updateUser := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}, {Key: "basic_key", Value: key.ID}}}}
 		_, err = userCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: userID}}, updateUser)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.UserResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -106,6 +102,7 @@ func CreateAdvancedKey() gin.HandlerFunc {
 		// 	name = "key_" + string(ran_str)
 		// }
 
+		// updateUser := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}}}, {Key: "$push", Value: bson.D{{Key: "keys", Value: key.ID}}}}
 		c.JSON(http.StatusNotImplemented, responses.KeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
 	}
 }

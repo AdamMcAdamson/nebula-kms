@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -61,6 +62,7 @@ func CreateUser() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
+		// Grab new user data from request body
 		if err := c.BindJSON(&newUser); err != nil {
 			c.JSON(http.StatusBadRequest, responses.UserResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
 			return
@@ -72,19 +74,34 @@ func CreateUser() gin.HandlerFunc {
 			return
 		}
 
+		// Build newUser
 		newUser.ID = primitive.NewObjectID()
 		newUser.Type = "Developer"
 		newUser.CreatedAt = time.Now()
 		newUser.UpdatedAt = newUser.CreatedAt
-		newUser.Keys = []primitive.ObjectID{}
+		newUser.BasicKey = primitive.NilObjectID
+		newUser.AdvancedKeys = []primitive.ObjectID{}
 		newUser.Services = nil
 
+		// Insert newUser into the database
 		_, err := userCollection.InsertOne(ctx, newUser)
 		if err != nil {
+			// Give clean error response on attempt to create duplicate profile for one platform user
+			var e mongo.WriteException
+			if errors.As(err, &e) {
+				for _, we := range e.WriteErrors {
+					if we.Code == 11000 {
+						c.JSON(http.StatusConflict, responses.UserResponse{Status: http.StatusConflict, Message: "error", Data: "The given platform_user_id is already associated with a KMS user"})
+						return
+					}
+				}
+			}
+			// Other errors
 			c.JSON(http.StatusInternalServerError, responses.UserResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
 			return
 		}
 
+		// Return newUser
 		c.JSON(http.StatusCreated, responses.UserResponse{Status: http.StatusCreated, Message: "success", Data: newUser})
 	}
 }
