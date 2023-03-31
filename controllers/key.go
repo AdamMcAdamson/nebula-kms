@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"math/rand"
 	"net/http"
 	"time"
 
@@ -11,29 +10,16 @@ import (
 	"github.com/UTDNebula/kms/responses"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 
 	"github.com/gin-gonic/gin"
 )
 
+var keyCollection *mongo.Collection = configs.GetCollection(configs.DB, "keys")
+
 // Create Basic Key
 func CreateBasicKey() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		/*
-			POST /Create-Basic-Key
-			FROM DeveloperPortalBackend
-			{
-				UserID
-			}
-			Return:
-			{
-				Key_Mongo_OID,
-				Key,
-				Timed_Quota,
-				Usage_Remaining,
-				Key_Created,
-				Last_Modified
-			}
-		*/
 
 		var key models.Key
 		var user models.User
@@ -41,36 +27,39 @@ func CreateBasicKey() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
+		// Pull userID from query
 		userID, err := primitive.ObjectIDFromHex(c.Query("user_id"))
 		if err != nil {
-			c.JSON(http.StatusBadRequest, responses.UserResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
 			return
 		}
 
-		// verify userID is valid
+		// Verify userID is valid (user exists)
 		err = userCollection.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, responses.UserResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
 			return
 		}
 
-		// @TODO: verify user has no basic keys (aggregation pipeline)
-
-		name, exists := c.GetQuery("name")
-
-		if !exists {
-			rand.Seed(time.Now().Unix())
-			ran_str := make([]byte, 12)
-			for i := range ran_str {
-				ran_str[i] = (byte)(65 + rand.Intn(25))
-			}
-			name = "key_" + string(ran_str)
+		// Verify user has no basic keys
+		var res bson.M
+		err = keyCollection.FindOne(ctx, bson.D{{Key: "owner_id", Value: userID}, {Key: "key_type", Value: "Basic"}}).Decode(&res)
+		if err != mongo.ErrNoDocuments && err != nil {
+			// Normal Error
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		} else if err == nil {
+			// User already has a basic key
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "User already has a basic key."})
+			return
 		}
 
+		// Build Key
 		key.ID = primitive.NewObjectID()
 		key.Type = "Basic"
-		key.Name = name
-		key.Quota = 200 // @TODO: Centralize values
+		key.Name = "Basic_Key"
+		key.OwnerID = userID
+		key.Quota = 100 // @TODO: Centralize const values
 		key.QuotaType = "Daily"
 		key.UsageRemaining = key.Quota
 		key.CreatedAt = time.Now()
@@ -79,17 +68,44 @@ func CreateBasicKey() gin.HandlerFunc {
 		key.IsActive = true
 		key.Key = configs.GenerateKey()
 
-		// @TODO: Insert into DB
+		// Create Key
+		_, err = keyCollection.InsertOne(ctx, key)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.UserResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
 
-		// @TODO: Return the key
+		// Update user with new key
+		updateUser := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}}}, {Key: "$push", Value: bson.D{{Key: "keys", Value: key.ID}}}}
 
-		c.JSON(http.StatusNotImplemented, responses.KeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
+		_, err = userCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: userID}}, updateUser)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.UserResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Return the key
+		c.JSON(http.StatusCreated, responses.KeyResponse{Status: http.StatusCreated, Message: "success", Data: key})
+
 	}
 }
 
 // Create Advanced Key
 func CreateAdvancedKey() gin.HandlerFunc {
 	return func(c *gin.Context) {
+
+		// Generate Key Name
+		// name, exists := c.GetQuery("name")
+
+		// if !exists {
+		// 	rand.Seed(time.Now().Unix())
+		// 	ran_str := make([]byte, 12)
+		// 	for i := range ran_str {
+		// 		ran_str[i] = (byte)(65 + rand.Intn(25))
+		// 	}
+		// 	name = "key_" + string(ran_str)
+		// }
+
 		c.JSON(http.StatusNotImplemented, responses.KeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
 	}
 }

@@ -9,6 +9,8 @@ import (
 
 func main() {
 
+	configs.InitConfig()
+
 	// Configure Gin Router
 	router := gin.Default()
 

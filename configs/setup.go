@@ -12,6 +12,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+func InitConfig() {
+	rand.Seed(time.Now().UTC().UnixNano())
+}
+
 func ConnectDB() *mongo.Client {
 	client, err := mongo.NewClient(options.Client().ApplyURI(GetEnvMongoURI()))
 	if err != nil {
@@ -53,7 +57,6 @@ const (
 )
 
 func GenerateKey() string {
-
 	// From https://stackoverflow.com/questions/22892120/how-to-generate-a-random-string-of-a-fixed-length-in-go
 	sb := strings.Builder{}
 	sb.Grow(key_length)
