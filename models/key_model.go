@@ -13,6 +13,7 @@ type Key struct {
 	Type           string             `json:"key_type" bson:"key_type"` // @TODO: Enum (?) (Basic, Advanced)
 	Name           string             `json:"name" bson:"name"`
 	OwnerID        primitive.ObjectID `json:"owner_id" bson:"owner_id"`
+	ServiceID      primitive.ObjectID `json:"service_id" bson:"service_id"`
 	Quota          int                `json:"quota" bson:"quota"`
 	QuotaType      string             `json:"quota_type" bson:"quota_type"` // @TODO: Enum (?) (Daily, etc...)
 	UsageRemaining int                `json:"usage_remaining" bson:"usage_remaining"`

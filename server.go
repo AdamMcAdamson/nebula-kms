@@ -19,6 +19,9 @@ func main() {
 	routes.KeyRoute(router)
 	routes.UserRoute(router)
 
+	// @INFO: Do not uncomment
+	// routes.ServiceRoute(router)
+
 	// Retrieve the port string to serve traffic on
 	portString := configs.GetPortString()
 
