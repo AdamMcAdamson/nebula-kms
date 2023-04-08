@@ -338,10 +338,10 @@ func DisableKey() gin.HandlerFunc {
 			return
 		}
 
-		// @TODO: Should keyholders be able to disable the key? (the current implementation allows this)
-		// Check if user is an Admin, or a lead of the key's service, or a keyholder
+		// @TODO: Who should be able to disable a key (advanced or basic?) and when?
+		// Check if user is an Admin, or a lead of the key's service, or the keyholder
 		// @INFO: Assumes key.ServiceID is valid
-		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) && (!slices.Contains(user.AdvancedKeys, keyID)) {
+		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) && (!slices.Contains(user.AdvancedKeys, keyID) && user.BasicKey != keyID) {
 			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to disable this key"})
 			return
 		}
@@ -455,11 +455,11 @@ func EnableKey() gin.HandlerFunc {
 			return
 		}
 
-		// @TODO: Should keyholders be able to enable the key? (the current implementation allows this)
-		// Check if user is an Admin, or a lead of the key's service, or a keyholder
+		// @TODO: Who should be able to disable a key (advanced or basic?) and when?
+		// Check if user is an Admin, or a lead of the key's service, or the keyholder
 		// @INFO: Assumes key.ServiceID is valid
-		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) && (!slices.Contains(user.AdvancedKeys, keyID)) {
-			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to enable this key"})
+		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) && (!slices.Contains(user.AdvancedKeys, keyID) && user.BasicKey != keyID) {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to disable this key"})
 			return
 		}
 
