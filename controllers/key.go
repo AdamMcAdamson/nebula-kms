@@ -249,7 +249,117 @@ func DeleteKey() gin.HandlerFunc {
 // Disable Key
 func DisableKey() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, responses.KeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
+		// @Optimize: Refactor to try update in aggregation pipeline ASAP
+		// and investigate reason on unsuccessful update for error reporting
+
+		var userID primitive.ObjectID
+		var userFilter bson.M
+		var user models.User
+
+		var keyID primitive.ObjectID
+		var keyFilter bson.M
+		var key models.Key
+
+		var updatedAt time.Time
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Get userID
+		userIDQuery, exists := c.GetQuery("user_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'user_id' field"})
+			return
+		}
+		userID, err := primitive.ObjectIDFromHex(userIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get updatedAt
+		updatedAtQuery, exists := c.GetQuery("updated_at")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'updated_at' field"})
+			return
+		}
+		updatedAt, err = time.Parse(configs.DateLayout, updatedAtQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify userID is valid (user exists)
+		userFilter = bson.M{"_id": userID}
+		err = userCollection.FindOne(ctx, userFilter).Decode(&user)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get keyID
+		keyIDQuery, exists := c.GetQuery("key_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
+			return
+		}
+		keyID, err = primitive.ObjectIDFromHex(keyIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify keyID is valid (key exists)
+		keyFilter = bson.M{"_id": keyID}
+
+		err = keyCollection.FindOne(ctx, keyFilter).Decode(&key)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid key_id: Key does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify key is enabled
+		if !key.IsActive {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Key is already disabled"})
+			return
+		}
+
+		// Verify matching updated_At
+		if !key.UpdatedAt.Equal(updatedAt) {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Out of date request: Key has been updated"})
+			return
+		}
+
+		// @TODO: Should keyholders be able to disable the key? (the current implementation allows this)
+		// Check if user is an Admin, or a lead of the key's service, or a keyholder
+		// @INFO: Assumes key.ServiceID is valid
+		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) && (!slices.Contains(user.AdvancedKeys, keyID)) {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to disable this key"})
+			return
+		}
+
+		// Disable key
+		key.IsActive = false
+		key.UpdatedAt = time.Now().UTC()
+
+		update := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: key.UpdatedAt}, {Key: "is_active", Value: key.IsActive}}}}
+		result, err := keyCollection.UpdateOne(ctx, keyFilter, update)
+		if err != nil || result.ModifiedCount == 0 {
+			// since we've already verified key exists, modified count should be 1
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Respond with formated key.UpdatedAt time
+		c.JSON(http.StatusOK, responses.KeyResponse{Status: http.StatusOK, Message: "success", Data: key.UpdatedAt.Format(configs.DateLayout)})
 	}
 }
 
@@ -338,7 +448,6 @@ func EnableKey() gin.HandlerFunc {
 			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Key is already enabled"})
 			return
 		}
-		log.Printf("\n%s\n%s\n", updatedAt, key.UpdatedAt)
 
 		// Verify matching updated_At
 		if !key.UpdatedAt.Equal(updatedAt) {
