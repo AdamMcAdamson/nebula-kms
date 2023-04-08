@@ -289,18 +289,6 @@ func DisableKey() gin.HandlerFunc {
 			return
 		}
 
-		// Verify userID is valid (user exists)
-		userFilter = bson.M{"_id": userID}
-		err = userCollection.FindOne(ctx, userFilter).Decode(&user)
-		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
-			return
-		}
-
 		// Get keyID
 		keyIDQuery, exists := c.GetQuery("key_id")
 		if !exists {
@@ -338,12 +326,29 @@ func DisableKey() gin.HandlerFunc {
 			return
 		}
 
-		// @TODO: Who should be able to disable a key (advanced or basic?) and when?
-		// Check if user is an Admin, or a lead of the key's service, or the keyholder
-		// @INFO: Assumes key.ServiceID is valid
-		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) && (!slices.Contains(user.AdvancedKeys, keyID) && user.BasicKey != keyID) {
-			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to disable this key"})
-			return
+		// Check if user is owner
+		// If not, verify permissions
+		// @INFO: We assume key.OwnerID is valid
+		if key.OwnerID != userID {
+			// Verify userID is valid (user exists and has permissions)
+			userFilter = bson.M{"_id": userID}
+			err = userCollection.FindOne(ctx, userFilter).Decode(&user)
+			if err != nil {
+				if err == mongo.ErrNoDocuments {
+					c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+				return
+			}
+
+			// @TODO: Who should be able to disable a key (advanced or basic?) and when?
+			// Check if user is an Admin, or a lead of the key's service
+			// @INFO: Assumes key.ServiceID is valid
+			if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
+				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to disable this key"})
+				return
+			}
 		}
 
 		// Disable key
@@ -351,9 +356,8 @@ func DisableKey() gin.HandlerFunc {
 		key.UpdatedAt = time.Now().UTC()
 
 		update := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: key.UpdatedAt}, {Key: "is_active", Value: key.IsActive}}}}
-		result, err := keyCollection.UpdateOne(ctx, keyFilter, update)
-		if err != nil || result.ModifiedCount == 0 {
-			// since we've already verified key exists, modified count should be 1
+		_, err = keyCollection.UpdateOne(ctx, keyFilter, update)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
 			return
 		}
@@ -406,18 +410,6 @@ func EnableKey() gin.HandlerFunc {
 			return
 		}
 
-		// Verify userID is valid (user exists)
-		userFilter = bson.M{"_id": userID}
-		err = userCollection.FindOne(ctx, userFilter).Decode(&user)
-		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
-			return
-		}
-
 		// Get keyID
 		keyIDQuery, exists := c.GetQuery("key_id")
 		if !exists {
@@ -455,12 +447,29 @@ func EnableKey() gin.HandlerFunc {
 			return
 		}
 
-		// @TODO: Who should be able to enable a key (advanced or basic?) and when?
-		// Check if user is an Admin, or a lead of the key's service, or the keyholder
-		// @INFO: Assumes key.ServiceID is valid
-		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) && (!slices.Contains(user.AdvancedKeys, keyID) && user.BasicKey != keyID) {
-			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to enable this key"})
-			return
+		// Check if user is owner
+		// If not, verify permissions
+		// @INFO: We assume key.OwnerID is valid
+		if key.OwnerID != userID {
+			// Verify userID is valid (user exists and has permissions)
+			userFilter = bson.M{"_id": userID}
+			err = userCollection.FindOne(ctx, userFilter).Decode(&user)
+			if err != nil {
+				if err == mongo.ErrNoDocuments {
+					c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+				return
+			}
+
+			// @TODO: Who should be able to enable a key (advanced or basic?) and when?
+			// Check if user is an Admin, or a lead of the key's service
+			// @INFO: Assumes key.ServiceID is valid
+			if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
+				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to enable this key"})
+				return
+			}
 		}
 
 		// Enable key
@@ -468,9 +477,8 @@ func EnableKey() gin.HandlerFunc {
 		key.UpdatedAt = time.Now().UTC()
 
 		update := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: key.UpdatedAt}, {Key: "is_active", Value: key.IsActive}}}}
-		result, err := keyCollection.UpdateOne(ctx, keyFilter, update)
-		if err != nil || result.ModifiedCount == 0 {
-			// since we've already verified key exists, modified count should be 1
+		_, err = keyCollection.UpdateOne(ctx, keyFilter, update)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
 			return
 		}
@@ -494,8 +502,8 @@ func RenameKey() gin.HandlerFunc {
 		// and investigate reason on unsuccessful update for error reporting
 
 		var userID primitive.ObjectID
-		var userFilter bson.M
-		var user models.User
+		// var userFilter bson.M
+		// var user models.User
 
 		var keyID primitive.ObjectID
 		var keyFilter bson.M
@@ -529,18 +537,6 @@ func RenameKey() gin.HandlerFunc {
 		updatedAt, err = time.Parse(configs.DateLayout, updatedAtQuery)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
-			return
-		}
-
-		// Verify userID is valid (user exists)
-		userFilter = bson.M{"_id": userID}
-		err = userCollection.FindOne(ctx, userFilter).Decode(&user)
-		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
 			return
 		}
 
@@ -583,9 +579,10 @@ func RenameKey() gin.HandlerFunc {
 		}
 
 		// @TODO: Who should be able to rename a key?
-		// Check if user is the keyholder
-		if !slices.Contains(user.AdvancedKeys, keyID) {
-			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to rename this key"})
+		// Check if user is the owner
+		// @INFO: We assume key.OwnerID is valid
+		if key.OwnerID != userID {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to rename this key"})
 			return
 		}
 
@@ -594,9 +591,8 @@ func RenameKey() gin.HandlerFunc {
 		key.UpdatedAt = time.Now().UTC()
 
 		update := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: key.UpdatedAt}, {Key: "name", Value: key.Name}}}}
-		result, err := keyCollection.UpdateOne(ctx, keyFilter, update)
-		if err != nil || result.ModifiedCount == 0 {
-			// since we've already verified key exists, modified count should be 1
+		_, err = keyCollection.UpdateOne(ctx, keyFilter, update)
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
 			return
 		}

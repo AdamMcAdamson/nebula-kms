@@ -70,7 +70,8 @@ func Allowed() gin.HandlerFunc {
 
 		// @TODO: Determine if we want to remove 'updated_at' change here and replace with new 'last_used' field
 		// Update key's usage remaining
-		updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}, {Key: "usage_remaining", Value: key.UsageRemaining}}}}
+		// updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}, {Key: "usage_remaining", Value: key.UsageRemaining}}}}
+		updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "usage_remaining", Value: key.UsageRemaining}}}}
 		_, err = keyCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: key.ID}}, updateKey)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.AllowedResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error(), IsAllowed: false})
