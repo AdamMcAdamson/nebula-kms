@@ -68,7 +68,7 @@ func CreateBasicKey() gin.HandlerFunc {
 		key.Quota = 100 // @TODO: Centralize const values
 		key.QuotaType = "Daily"
 		key.UsageRemaining = key.Quota
-		key.CreatedAt = time.Now()
+		key.CreatedAt = time.Now().UTC()
 		key.QuotaTimestamp = key.CreatedAt
 		key.UpdatedAt = key.CreatedAt
 		key.IsActive = true
@@ -82,7 +82,7 @@ func CreateBasicKey() gin.HandlerFunc {
 		}
 
 		// Update user with new key
-		updateUser := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}, {Key: "basic_key", Value: key.ID}}}}
+		updateUser := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now().UTC()}, {Key: "basic_key", Value: key.ID}}}}
 		_, err = userCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: userID}}, updateUser)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -164,6 +164,7 @@ func CreateAdvancedKey() gin.HandlerFunc {
 		}
 
 		// Verify creatorUser is an Admin, or a lead of the given service
+		// @TODO: Remove debug printfs
 		if creatorUser.Type != "Admin" && (creatorUser.Type != "Lead" || !slices.Contains(creatorUser.Services, serviceID)) {
 			println(creatorUser.Type + ": ")
 			log.Printf("%v", creatorUser.Services)
@@ -211,7 +212,7 @@ func CreateAdvancedKey() gin.HandlerFunc {
 		key.ServiceID = serviceID
 		key.QuotaType = "Daily" // @TODO: Handle alternative quota types
 		key.UsageRemaining = key.Quota
-		key.CreatedAt = time.Now()
+		key.CreatedAt = time.Now().UTC()
 		key.QuotaTimestamp = key.CreatedAt
 		key.UpdatedAt = key.CreatedAt
 		key.IsActive = true
@@ -225,7 +226,7 @@ func CreateAdvancedKey() gin.HandlerFunc {
 		}
 
 		// Update recipient user with new key
-		updateRecipientUser := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}}}, {Key: "$push", Value: bson.D{{Key: "advanced_keys", Value: key.ID}}}}
+		updateRecipientUser := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now().UTC()}}}, {Key: "$push", Value: bson.D{{Key: "advanced_keys", Value: key.ID}}}}
 		_, err = userCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: recipientUserID}}, updateRecipientUser)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -255,7 +256,118 @@ func DisableKey() gin.HandlerFunc {
 // Enable Key
 func EnableKey() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, responses.KeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
+		// @Optimize: Refactor to try update in aggregation pipeline ASAP
+		// and investigate reason on unsuccessful update for error reporting
+
+		var userID primitive.ObjectID
+		var userFilter bson.M
+		var user models.User
+
+		var keyID primitive.ObjectID
+		var keyFilter bson.M
+		var key models.Key
+
+		var updatedAt time.Time
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Get userID
+		userIDQuery, exists := c.GetQuery("user_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'user_id' field"})
+			return
+		}
+		userID, err := primitive.ObjectIDFromHex(userIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get updatedAt
+		updatedAtQuery, exists := c.GetQuery("updated_at")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'updated_at' field"})
+			return
+		}
+		updatedAt, err = time.Parse(configs.DateLayout, updatedAtQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify userID is valid (user exists)
+		userFilter = bson.M{"_id": userID}
+		err = userCollection.FindOne(ctx, userFilter).Decode(&user)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get keyID
+		keyIDQuery, exists := c.GetQuery("key_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
+			return
+		}
+		keyID, err = primitive.ObjectIDFromHex(keyIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify keyID is valid (key exists)
+		keyFilter = bson.M{"_id": keyID}
+
+		err = keyCollection.FindOne(ctx, keyFilter).Decode(&key)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid key_id: Key does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify key is disabled
+		if key.IsActive {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Key is already enabled"})
+			return
+		}
+		log.Printf("\n%s\n%s\n", updatedAt, key.UpdatedAt)
+
+		// Verify matching updated_At
+		if !key.UpdatedAt.Equal(updatedAt) {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Out of date request: Key has been updated"})
+			return
+		}
+
+		// @TODO: Should keyholders be able to enable the key? (the current implementation allows this)
+		// Check if user is an Admin, or a lead of the key's service, or a keyholder
+		// @INFO: Assumes key.ServiceID is valid
+		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) && (!slices.Contains(user.AdvancedKeys, keyID)) {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to enable this key"})
+			return
+		}
+
+		// Enable key
+		key.IsActive = true
+		key.UpdatedAt = time.Now().UTC()
+
+		update := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: key.UpdatedAt}, {Key: "is_active", Value: key.IsActive}}}}
+		result, err := keyCollection.UpdateOne(ctx, keyFilter, update)
+		if err != nil || result.ModifiedCount == 0 {
+			// since we've already verified key exists, modified count should be 1
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Respond with formated key.UpdatedAt time
+		c.JSON(http.StatusOK, responses.KeyResponse{Status: http.StatusOK, Message: "success", Data: key.UpdatedAt.Format(configs.DateLayout)})
 	}
 }
 
