@@ -1077,7 +1077,133 @@ func RestoreKeyQuota() gin.HandlerFunc {
 // Change Key Holder
 func ChangeKeyHolder() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, responses.KeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
+		var key models.Key
+		var assignerUser models.User
+		var recipientUser models.User
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Pull objectID fields from query
+		assignerUserIDQuery, exists := c.GetQuery("assigner_user_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'assigner_user_id' field"})
+			return
+		}
+		assignerUserID, err := primitive.ObjectIDFromHex(assignerUserIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		recipientUserIDQuery, exists := c.GetQuery("recipient_user_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'recipient_user_id' field"})
+			return
+		}
+		recipientUserID, err := primitive.ObjectIDFromHex(recipientUserIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		keyIDQuery, exists := c.GetQuery("key_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
+			return
+		}
+		keyID, err := primitive.ObjectIDFromHex(keyIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify assignerUserID is valid (user exists)
+		err = userCollection.FindOne(ctx, bson.M{"_id": assignerUserID}).Decode(&assignerUser)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid assigner_user_id: User does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify keyID is valid (key exists)
+		err = keyCollection.FindOne(ctx, bson.M{"_id": keyID}).Decode(&key)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid key_id: Key does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify recipientUser is not the current owner
+		if key.OwnerID == recipientUserID {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given recipient_user already owns this key"})
+			return
+		}
+
+		// Verify assignerUser is an Admin, or a lead of the given key's service
+		if assignerUser.Type != "Admin" && (assignerUser.Type != "Lead" || !slices.Contains(assignerUser.Services, key.ServiceID)) {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given assigner_user does not have the authority to transfer keys for the given service"})
+			return
+		}
+
+		// Verify recipientUserID is valid (user exists)
+		err = userCollection.FindOne(ctx, bson.M{"_id": recipientUserID}).Decode(&recipientUser)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get previous key owner
+		previousKeyOwnerUserID := key.OwnerID
+
+		// Set Key owner
+		key.OwnerID = recipientUserID
+		key.UpdatedAt = time.Now().UTC()
+
+		// Update Key
+		updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "owner_id", Value: key.OwnerID}}}}
+		_, err = keyCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: key.ID}}, updateKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Remove key from previous owner
+		updatePreviousKeyOwnerUser := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now().UTC()}}}, {Key: "$pull", Value: bson.D{{Key: "advanced_keys", Value: key.ID}}}}
+		_, err = userCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: previousKeyOwnerUserID}}, updatePreviousKeyOwnerUser)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Update recipient user with new key
+		updateRecipientUser := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now().UTC()}}}, {Key: "$push", Value: bson.D{{Key: "advanced_keys", Value: key.ID}}}}
+		_, err = userCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: recipientUserID}}, updateRecipientUser)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		res := struct {
+			KeyID     primitive.ObjectID `json:"key_id" bson:"key_id"`
+			UpdatedAt string             `json:"updated_at" bson:"updated_at"`
+		}{
+			KeyID:     key.ID,
+			UpdatedAt: key.UpdatedAt.Format(configs.DateLayout),
+		}
+
+		// Respond
+		c.JSON(http.StatusOK, responses.KeyResponse{Status: http.StatusOK, Message: "success", Data: res})
 	}
 }
 

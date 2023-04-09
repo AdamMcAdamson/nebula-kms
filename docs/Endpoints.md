@@ -204,12 +204,10 @@ FROM DeveloperPortalBackend
     RecipientUserID,
     Key_Mongo_OID,
     Last_Modified,
-    Name
 }
 Return:
 {
     Key_Mongo_OID,
-    Name,
     Last_Modified
 }, {409}// old Last_Modified
 
