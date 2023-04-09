@@ -490,8 +490,118 @@ func EnableKey() gin.HandlerFunc {
 
 // Rename Key
 func RegenerateKey() gin.HandlerFunc {
+	// PATCH /Regenerate-Key
+	// FROM DeveloperPortalBackend
+	// {
+	//     UserID,
+	//     Key_Mongo_OID,
+	//     Last_Modified
+	// }
+	// Return:
+	// {
+	//     Key,
+	//     Last_Modified
+	// }, {409}// old Last_Modified
+
 	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, responses.KeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
+		// @Optimize: Refactor to try update in aggregation pipeline ASAP
+		// and investigate reason on unsuccessful update for error reporting
+
+		var userID primitive.ObjectID
+
+		var keyID primitive.ObjectID
+		var keyFilter bson.M
+		var key models.Key
+
+		var updatedAt time.Time
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Get userID
+		userIDQuery, exists := c.GetQuery("user_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'user_id' field"})
+			return
+		}
+		userID, err := primitive.ObjectIDFromHex(userIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get updatedAt
+		updatedAtQuery, exists := c.GetQuery("updated_at")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'updated_at' field"})
+			return
+		}
+		updatedAt, err = time.Parse(configs.DateLayout, updatedAtQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get keyID
+		keyIDQuery, exists := c.GetQuery("key_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
+			return
+		}
+		keyID, err = primitive.ObjectIDFromHex(keyIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify keyID is valid (key exists)
+		keyFilter = bson.M{"_id": keyID}
+
+		// Get Key
+		err = keyCollection.FindOne(ctx, keyFilter).Decode(&key)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid key_id: Key does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify matching updated_At
+		if !key.UpdatedAt.Equal(updatedAt) {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Out of date request: Key has been updated"})
+			return
+		}
+
+		// Check if user is owner
+		// @INFO: We assume key.OwnerID is valid
+		if key.OwnerID != userID {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to regenerate this key"})
+			return
+		}
+
+		// Regenerate key
+		key.Key = configs.GenerateKey()
+		key.UpdatedAt = time.Now().UTC()
+
+		update := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: key.UpdatedAt}, {Key: "key", Value: key.Key}}}}
+		_, err = keyCollection.UpdateOne(ctx, keyFilter, update)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		res := struct {
+			Key       string `json:"key" bson:"key"`
+			UpdatedAt string `json:"updated_at" bson:"updated_at"`
+		}{
+			Key:       key.Key,
+			UpdatedAt: key.UpdatedAt.Format(configs.DateLayout),
+		}
+
+		// Respond with formated key.UpdatedAt time
+		c.JSON(http.StatusOK, responses.KeyResponse{Status: http.StatusOK, Message: "success", Data: res})
 	}
 }
 
