@@ -144,7 +144,7 @@ func CreateAdvancedKey() gin.HandlerFunc {
 		err = userCollection.FindOne(ctx, bson.M{"_id": creatorUserID}).Decode(&creatorUser)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid creator_user_id: User does not exist"})
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid creator_user_id: User does not exist"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -155,7 +155,7 @@ func CreateAdvancedKey() gin.HandlerFunc {
 		err = serviceCollection.FindOne(ctx, bson.M{"_id": serviceID}).Decode(&service)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid service_id: Service does not exist"})
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid service_id: Service does not exist"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -172,7 +172,7 @@ func CreateAdvancedKey() gin.HandlerFunc {
 		err = userCollection.FindOne(ctx, bson.M{"_id": recipientUserID}).Decode(&recipientUser)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -227,6 +227,11 @@ func CreateAdvancedKey() gin.HandlerFunc {
 
 		// Hide the actual key and return the remaining relevant data
 		key.Key = "_HIDDEN_"
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
 		c.JSON(http.StatusCreated, responses.KeyResponse{Status: http.StatusCreated, Message: "success", Data: key})
 	}
 }
@@ -234,7 +239,116 @@ func CreateAdvancedKey() gin.HandlerFunc {
 // Delete Key
 func DeleteKey() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, responses.KeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
+		// @Optimize: Refactor to try update in aggregation pipeline ASAP
+		// and investigate reason on unsuccessful update for error reporting
+
+		var userID primitive.ObjectID
+		var userFilter bson.M
+		var user models.User
+
+		var keyID primitive.ObjectID
+		var keyFilter bson.M
+		var key models.Key
+
+		var updatedAt time.Time
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Get userID
+		userIDQuery, exists := c.GetQuery("user_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'user_id' field"})
+			return
+		}
+		userID, err := primitive.ObjectIDFromHex(userIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get updatedAt
+		updatedAtQuery, exists := c.GetQuery("updated_at")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'updated_at' field"})
+			return
+		}
+		updatedAt, err = time.Parse(configs.DateLayout, updatedAtQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get keyID
+		keyIDQuery, exists := c.GetQuery("key_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
+			return
+		}
+		keyID, err = primitive.ObjectIDFromHex(keyIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify keyID is valid (key exists)
+		keyFilter = bson.M{"_id": keyID}
+
+		err = keyCollection.FindOne(ctx, keyFilter).Decode(&key)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid key_id: Key does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		if key.Type != "Advanced" {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Invalid key_id: Can only delete advanced keys"})
+			return
+		}
+
+		// Verify matching updated_At
+		if !key.UpdatedAt.Equal(updatedAt) {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Out of date request: Key has been updated"})
+			return
+		}
+
+		// Check if user is owner
+		// If not, verify permissions
+		// @INFO: We assume key.OwnerID is valid
+		if key.OwnerID != userID {
+			// Verify userID is valid (user exists and has permissions)
+			userFilter = bson.M{"_id": userID}
+			err = userCollection.FindOne(ctx, userFilter).Decode(&user)
+			if err != nil {
+				if err == mongo.ErrNoDocuments {
+					c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+				return
+			}
+
+			// @TODO: Who should be able to disable a key (advanced or basic?) and when?
+			// Check if user is an Admin, or a lead of the key's service
+			// @INFO: Assumes key.ServiceID is valid
+			if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
+				c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to delete this key"})
+				return
+			}
+		}
+
+		// Delete Key
+		_, err = keyCollection.DeleteOne(ctx, keyFilter)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Respond
+		c.JSON(http.StatusOK, responses.KeyResponse{Status: http.StatusOK, Message: "success", Data: nil})
 	}
 }
 
@@ -299,7 +413,7 @@ func DisableKey() gin.HandlerFunc {
 		err = keyCollection.FindOne(ctx, keyFilter).Decode(&key)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid key_id: Key does not exist"})
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid key_id: Key does not exist"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -327,7 +441,7 @@ func DisableKey() gin.HandlerFunc {
 			err = userCollection.FindOne(ctx, userFilter).Decode(&user)
 			if err != nil {
 				if err == mongo.ErrNoDocuments {
-					c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
+					c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
 					return
 				}
 				c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -420,7 +534,7 @@ func EnableKey() gin.HandlerFunc {
 		err = keyCollection.FindOne(ctx, keyFilter).Decode(&key)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid key_id: Key does not exist"})
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid key_id: Key does not exist"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -448,7 +562,7 @@ func EnableKey() gin.HandlerFunc {
 			err = userCollection.FindOne(ctx, userFilter).Decode(&user)
 			if err != nil {
 				if err == mongo.ErrNoDocuments {
-					c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
+					c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
 					return
 				}
 				c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -540,7 +654,7 @@ func RegenerateKey() gin.HandlerFunc {
 		err = keyCollection.FindOne(ctx, keyFilter).Decode(&key)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid key_id: Key does not exist"})
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid key_id: Key does not exist"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -647,7 +761,7 @@ func RenameKey() gin.HandlerFunc {
 		err = keyCollection.FindOne(ctx, keyFilter).Decode(&key)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid key_id: Key does not exist"})
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid key_id: Key does not exist"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})

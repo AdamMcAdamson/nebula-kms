@@ -1,8 +1,10 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
+	"github.com/UTDNebula/kms/configs"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -29,4 +31,20 @@ type Key struct {
 	CreatedAt      time.Time `json:"created_at" bson:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" bson:"updated_at"`
 	IsActive       bool      `json:"is_active" bson:"is_active"`
+}
+
+func (k Key) MarshalJSON() ([]byte, error) {
+	type Alias Key
+	return json.Marshal(&struct {
+		QuotaTimestamp string `json:"quota_timestamp"`
+		CreatedAt      string `json:"created_at"`
+		UpdatedAt      string `json:"updated_at"`
+		Alias
+	}{
+		// use the desired date layout
+		QuotaTimestamp: k.QuotaTimestamp.Format(configs.DateLayout),
+		CreatedAt:      k.CreatedAt.Format(configs.DateLayout),
+		UpdatedAt:      k.UpdatedAt.Format(configs.DateLayout),
+		Alias:          Alias(k),
+	})
 }
