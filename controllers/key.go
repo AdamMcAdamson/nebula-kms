@@ -1171,7 +1171,7 @@ func ChangeKeyHolder() gin.HandlerFunc {
 		key.UpdatedAt = time.Now().UTC()
 
 		// Update Key
-		updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "owner_id", Value: key.OwnerID}}}}
+		updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "owner_id", Value: key.OwnerID}, {Key: "updated_at", Value: key.UpdatedAt}}}}
 		_, err = keyCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: key.ID}}, updateKey)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -1210,6 +1210,118 @@ func ChangeKeyHolder() gin.HandlerFunc {
 // Change Key Service
 func ChangeKeyService() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, responses.KeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
+		var user models.User
+		var key models.Key
+		var service models.Service
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		userIDQuery, exists := c.GetQuery("user_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'user_id' field"})
+			return
+		}
+		userID, err := primitive.ObjectIDFromHex(userIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		keyIDQuery, exists := c.GetQuery("key_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
+			return
+		}
+		keyID, err := primitive.ObjectIDFromHex(keyIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		serviceIDQuery, exists := c.GetQuery("service_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'service_id' field"})
+			return
+		}
+		serviceID, err := primitive.ObjectIDFromHex(serviceIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify userID is valid (user exists)
+		err = userCollection.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid user_id: User does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify keyID is valid (key exists)
+		err = keyCollection.FindOne(ctx, bson.M{"_id": keyID}).Decode(&key)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid key_id: Key does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify the key is an advanced key
+		if key.Type != "Advanced" {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given key is a basic key. Basic keys are not for a specific service"})
+			return
+		}
+
+		// Verify the given service is not the current service for the key
+		if key.ServiceID == serviceID {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given key is already for the given service"})
+			return
+		}
+
+		// Verify serviceID is valid (service exists)
+		err = serviceCollection.FindOne(ctx, bson.M{"_id": serviceID}).Decode(&service)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid service_id: Service does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify user is an Admin, or a lead of the given service and the key's current service
+		if user.Type != "Admin" && (user.Type != "Lead" || !(slices.Contains(user.Services, key.ServiceID) && slices.Contains(user.Services, serviceID))) {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to transfer the given key to the given service"})
+			return
+		}
+
+		// Set Key service
+		key.ServiceID = serviceID
+		key.UpdatedAt = time.Now().UTC()
+
+		// Update Key
+		updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "owner_id", Value: key.OwnerID}, {Key: "updated_at", Value: key.UpdatedAt}}}}
+		_, err = keyCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: key.ID}}, updateKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		res := struct {
+			ServiceID primitive.ObjectID `json:"serive_id" bson:"service_id"`
+			UpdatedAt string             `json:"updated_at" bson:"updated_at"`
+		}{
+			ServiceID: key.ServiceID,
+			UpdatedAt: key.UpdatedAt.Format(configs.DateLayout),
+		}
+
+		// Respond
+		c.JSON(http.StatusOK, responses.KeyResponse{Status: http.StatusOK, Message: "success", Data: res})
 	}
 }
