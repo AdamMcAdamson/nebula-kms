@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -164,14 +163,7 @@ func CreateAdvancedKey() gin.HandlerFunc {
 		}
 
 		// Verify creatorUser is an Admin, or a lead of the given service
-		// @TODO: Remove debug printfs
 		if creatorUser.Type != "Admin" && (creatorUser.Type != "Lead" || !slices.Contains(creatorUser.Services, serviceID)) {
-			println(creatorUser.Type + ": ")
-			log.Printf("%v", creatorUser.Services)
-			print(" : ")
-			println(serviceID.String())
-			println(slices.Contains(creatorUser.Services, serviceID))
-
 			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given creator_user does not have the authority to create keys for the given service"})
 			return
 		}
@@ -488,21 +480,8 @@ func EnableKey() gin.HandlerFunc {
 	}
 }
 
-// Rename Key
+// Regenerate Key
 func RegenerateKey() gin.HandlerFunc {
-	// PATCH /Regenerate-Key
-	// FROM DeveloperPortalBackend
-	// {
-	//     UserID,
-	//     Key_Mongo_OID,
-	//     Last_Modified
-	// }
-	// Return:
-	// {
-	//     Key,
-	//     Last_Modified
-	// }, {409}// old Last_Modified
-
 	return func(c *gin.Context) {
 		// @Optimize: Refactor to try update in aggregation pipeline ASAP
 		// and investigate reason on unsuccessful update for error reporting
@@ -605,7 +584,7 @@ func RegenerateKey() gin.HandlerFunc {
 	}
 }
 
-// Regenerate Key
+// Rename Key
 func RenameKey() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// @Optimize: Refactor to try update in aggregation pipeline ASAP
