@@ -331,7 +331,7 @@ func DeleteKey() gin.HandlerFunc {
 				return
 			}
 
-			// @TODO: Who should be able to disable a key (advanced or basic?) and when?
+			// @TODO: Who should be able to delete an advanced key?
 			// Check if user is an Admin, or a lead of the key's service
 			// @INFO: Assumes key.ServiceID is valid
 			if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
@@ -808,7 +808,149 @@ func RenameKey() gin.HandlerFunc {
 // Set Quota for a Key
 func SetKeyQuota() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, responses.KeyResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
+		// @Optimize: Refactor to try update in aggregation pipeline ASAP
+		// and investigate reason on unsuccessful update for error reporting
+
+		var userID primitive.ObjectID
+		var userFilter bson.M
+		var user models.User
+
+		var keyID primitive.ObjectID
+		var keyFilter bson.M
+		var key models.Key
+
+		var quota int
+		// var quotaType string
+
+		var updatedAt time.Time
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// Get userID
+		userIDQuery, exists := c.GetQuery("user_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'user_id' field"})
+			return
+		}
+		userID, err := primitive.ObjectIDFromHex(userIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get updatedAt
+		updatedAtQuery, exists := c.GetQuery("updated_at")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'updated_at' field"})
+			return
+		}
+		updatedAt, err = time.Parse(configs.DateLayout, updatedAtQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get keyID
+		keyIDQuery, exists := c.GetQuery("key_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
+			return
+		}
+		keyID, err = primitive.ObjectIDFromHex(keyIDQuery)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Get quota
+		quotaStr, exists := c.GetQuery("quota")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
+			return
+		}
+		quotaI64, err := strconv.ParseInt(quotaStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+		quota = (int)(quotaI64)
+
+		// @TODO: Handle quotaType
+		// Get quotaType
+		// quotaType, exists = c.GetQuery("quota_type")
+		// if !exists {
+		// 	c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
+		// 	return
+		// }
+
+		// Verify keyID is valid (key exists)
+		keyFilter = bson.M{"_id": keyID}
+
+		err = keyCollection.FindOne(ctx, keyFilter).Decode(&key)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid key_id: Key does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Verify matching updated_At
+		if !key.UpdatedAt.Equal(updatedAt) {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Out of date request: Key has been updated"})
+			return
+		}
+
+		// Verify userID is valid (user exists and has permissions)
+		userFilter = bson.M{"_id": userID}
+		err = userCollection.FindOne(ctx, userFilter).Decode(&user)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid recipient_user_id: User does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Check if user is an Admin, or a lead of the key's service
+		// @INFO: Assumes key.ServiceID is valid
+		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to set the quota for this key"})
+			return
+		}
+
+		// Set quota
+		key.Quota = quota
+		key.UsageRemaining = key.Quota
+		key.UpdatedAt = time.Now().UTC()
+		key.QuotaTimestamp = key.UpdatedAt
+
+		update := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: key.UpdatedAt}, {Key: "quota", Value: key.Quota}, {Key: "quota_type", Value: key.QuotaType}, {Key: "quota_timestamp", Value: key.QuotaTimestamp}}}}
+		_, err = keyCollection.UpdateOne(ctx, keyFilter, update)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		res := struct {
+			Quota          int    `json:"quota" bson:"quota"`
+			QuotaType      string `json:"quota_type" bson:"quota_type"` // @TODO: Enum (?) (Daily, etc...)
+			UsageRemaining int    `json:"usage_remaining" bson:"usage_remaining"`
+			QuotaTimestamp string `json:"quota_timestamp"`
+			UpdatedAt      string `json:"updated_at" bson:"updated_at"`
+		}{
+			Quota:          key.Quota,
+			QuotaType:      key.QuotaType,
+			UsageRemaining: key.UsageRemaining,
+			QuotaTimestamp: key.QuotaTimestamp.Format(configs.DateLayout),
+			UpdatedAt:      key.UpdatedAt.Format(configs.DateLayout),
+		}
+
+		// Respond with formated key.UpdatedAt time
+		c.JSON(http.StatusOK, responses.KeyResponse{Status: http.StatusOK, Message: "success", Data: res})
 	}
 }
 
