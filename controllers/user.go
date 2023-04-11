@@ -20,7 +20,41 @@ var userCollection *mongo.Collection = configs.GetCollection(configs.DB, "users"
 
 func GetUserKeys() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, responses.UserResponse{Status: http.StatusNotImplemented, Message: "Not Implemented", Data: nil})
+		// var user models.User
+		var userKeys map[string]interface{}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		userID, err := primitive.ObjectIDFromHex(c.Query("user_id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, responses.UserResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			return
+		}
+
+		pipelineMatchOnUserID := bson.D{{Key: "$match", Value: bson.D{{Key: "_id", Value: userID}}}}
+		pipelineLookupAdvancedKeys := bson.D{{Key: "$lookup", Value: bson.D{{Key: "from", Value: "keys"}, {Key: "localField", Value: "advanced_keys"}, {Key: "foreignField", Value: "_id"}, {Key: "as", Value: "advanced_keys"}}}}
+		pipelineLookupBasicKey := bson.D{{Key: "$lookup", Value: bson.D{{Key: "from", Value: "keys"}, {Key: "localField", Value: "basic_key"}, {Key: "foreignField", Value: "_id"}, {Key: "as", Value: "basic_key"}}}}
+		pipelineUnwindBasicKey := bson.D{{Key: "$unwind", Value: bson.D{{Key: "path", Value: "$basic_key"}, {Key: "preserveNullAndEmptyArrays", Value: true}}}}
+		pipelineProjectKeyFields := bson.D{{Key: "$project", Value: bson.D{{Key: "basic_key", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$basic_key", primitive.Null{}}}}}, {Key: "advanced_keys", Value: 1}}}}
+
+		mongoPipeline := bson.A{pipelineMatchOnUserID, pipelineLookupAdvancedKeys, pipelineLookupBasicKey, pipelineUnwindBasicKey, pipelineProjectKeyFields}
+
+		cursor, err := userCollection.Aggregate(ctx, mongoPipeline)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+		if !cursor.Next(ctx) {
+			c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid user_id: User does not exist"})
+			return
+		}
+		err = cursor.Decode(&userKeys)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, responses.UserResponse{Status: http.StatusOK, Message: "success", Data: userKeys})
 	}
 }
 
