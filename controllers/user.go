@@ -83,6 +83,11 @@ func GetUserType() gin.HandlerFunc {
 }
 
 func GetPrivilegedUserData() gin.HandlerFunc {
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
 	// GET /KMS-Privileged-Data
 	// FROM DeveloperPortalBackend
 	// {
@@ -92,6 +97,12 @@ func GetPrivilegedUserData() gin.HandlerFunc {
 	// {
 	// 	User_Collection * Service (Filtered by User Type) * Key_Collection (Limited)
 	// }
+<<<<<<< Updated upstream
+=======
+
+	// @TODO: Admins can see key values, Leads cannot
+>>>>>>> Stashed changes
+>>>>>>> Stashed changes
 	return func(c *gin.Context) {
 
 		var user models.User

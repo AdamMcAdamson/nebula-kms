@@ -46,7 +46,7 @@ func CreateBasicKey() gin.HandlerFunc {
 		err = userCollection.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
 		if err != nil {
 			if err == mongo.ErrNoDocuments {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invalid user_id"})
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid user_id"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -164,7 +164,7 @@ func CreateAdvancedKey() gin.HandlerFunc {
 
 		// Verify creatorUser is an Admin, or a lead of the given service
 		if creatorUser.Type != "Admin" && (creatorUser.Type != "Lead" || !slices.Contains(creatorUser.Services, serviceID)) {
-			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given creator_user does not have the authority to create keys for the given service"})
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given creator_user does not have the authority to create keys for the given service"})
 			return
 		}
 
@@ -331,11 +331,11 @@ func DeleteKey() gin.HandlerFunc {
 				return
 			}
 
-			// @TODO: Who should be able to delete an advanced key?
+			// @TODO: Who should be able to delete an advanced key? Owner, Lead, Admin
 			// Check if user is an Admin, or a lead of the key's service
 			// @INFO: Assumes key.ServiceID is valid
 			if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
-				c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to delete this key"})
+				c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to delete this key"})
 				return
 			}
 		}
@@ -355,6 +355,7 @@ func DeleteKey() gin.HandlerFunc {
 // Disable Key
 func DisableKey() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// @TODO: Only Admins/Leads can disable
 		// @Optimize: Refactor to try update in aggregation pipeline ASAP
 		// and investigate reason on unsuccessful update for error reporting
 
@@ -448,11 +449,11 @@ func DisableKey() gin.HandlerFunc {
 				return
 			}
 
-			// @TODO: Who should be able to disable a key (advanced or basic?) and when?
+			// @TODO: Who should be able to disable a key (advanced or basic?) and when? ONLY ADMINs/LEADs
 			// Check if user is an Admin, or a lead of the key's service
 			// @INFO: Assumes key.ServiceID is valid
 			if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to disable this key"})
+				c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to disable this key"})
 				return
 			}
 		}
@@ -476,6 +477,7 @@ func DisableKey() gin.HandlerFunc {
 // Enable Key
 func EnableKey() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// @TODO: Only Admins/Leads can enable
 		// @Optimize: Refactor to try update in aggregation pipeline ASAP
 		// and investigate reason on unsuccessful update for error reporting
 
@@ -573,7 +575,7 @@ func EnableKey() gin.HandlerFunc {
 			// Check if user is an Admin, or a lead of the key's service
 			// @INFO: Assumes key.ServiceID is valid
 			if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
-				c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to enable this key"})
+				c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to enable this key"})
 				return
 			}
 		}
@@ -594,6 +596,7 @@ func EnableKey() gin.HandlerFunc {
 	}
 }
 
+// @TODO: Owner, Admin, and Leads can regenerate keys
 // Regenerate Key
 func RegenerateKey() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -677,8 +680,9 @@ func RegenerateKey() gin.HandlerFunc {
 		// Regenerate key
 		key.Key = configs.GenerateKey()
 		key.UpdatedAt = time.Now().UTC()
+		key.IsActive = true
 
-		update := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: key.UpdatedAt}, {Key: "key", Value: key.Key}}}}
+		update := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: key.UpdatedAt}, {Key: "key", Value: key.Key}, {Key: "is_active", Value: key.IsActive}}}}
 		_, err = keyCollection.UpdateOne(ctx, keyFilter, update)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -688,9 +692,11 @@ func RegenerateKey() gin.HandlerFunc {
 		res := struct {
 			Key       string `json:"key" bson:"key"`
 			UpdatedAt string `json:"updated_at" bson:"updated_at"`
+			IsActive  bool   `json:"is_active" bsom:"is_active"`
 		}{
-			Key:       key.Key,
+			Key:       "_HIDDEN_",
 			UpdatedAt: key.UpdatedAt.Format(configs.DateLayout),
+			IsActive:  key.IsActive,
 		}
 
 		// Respond with formated key.UpdatedAt time
@@ -781,11 +787,11 @@ func RenameKey() gin.HandlerFunc {
 			return
 		}
 
-		// @TODO: Who should be able to rename a key?
+		// @TODO: Who should be able to rename a key? ONLY The OWNER
 		// Check if user is the owner
 		// @INFO: We assume key.OwnerID is valid
 		if key.OwnerID != userID {
-			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to rename this key"})
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to rename this key"})
 			return
 		}
 
@@ -880,7 +886,7 @@ func SetKeyQuota() gin.HandlerFunc {
 		// Get quotaType
 		// quotaType, exists = c.GetQuery("quota_type")
 		// if !exists {
-		// 	c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
+		// 	c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Request must include the 'key_id' field"})
 		// 	return
 		// }
 
@@ -918,7 +924,7 @@ func SetKeyQuota() gin.HandlerFunc {
 		// Check if user is an Admin, or a lead of the key's service
 		// @INFO: Assumes key.ServiceID is valid
 		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
-			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to set the quota for this key"})
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to set the quota for this key"})
 			return
 		}
 
@@ -1043,7 +1049,7 @@ func RestoreKeyQuota() gin.HandlerFunc {
 		// Check if user is an Admin, or a lead of the key's service
 		// @INFO: Assumes key.ServiceID is valid
 		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
-			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "The given user does not have the authority to set the quota for this key"})
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to set the quota for this key"})
 			return
 		}
 

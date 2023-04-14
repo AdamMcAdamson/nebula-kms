@@ -33,7 +33,7 @@ func CreateService() gin.HandlerFunc {
 
 		// Verify valid service type
 		if newService.Type != "PublicProduction" && newService.Type != "PrivateProduction" && newService.Type != "Staging" {
-			c.JSON(http.StatusBadRequest, responses.ServiceResponse{Status: http.StatusBadRequest, Message: "error", Data: "Invald service_type. Must be 'PublicProduction', 'PrivateProduction', or 'Staging'"})
+			c.JSON(http.StatusConflict, responses.ServiceResponse{Status: http.StatusConflict, Message: "error", Data: "Invald service_type. Must be 'PublicProduction', 'PrivateProduction', or 'Staging'"})
 			return
 		}
 

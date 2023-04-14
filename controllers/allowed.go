@@ -68,7 +68,8 @@ func Allowed() gin.HandlerFunc {
 
 		key.UsageRemaining -= 1
 
-		// @TODO: Determine if we want to remove 'updated_at' change here and replace with new 'last_used' field
+		// @TODO: Update 'last_used' field
+		// @TODO: IMPLEMENT LOGGING AND PUSH THIS TO AFTER WE TELL THE GATEWAY THAT THE KEY IS ALLOWED
 		// Update key's usage remaining
 		// updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}, {Key: "usage_remaining", Value: key.UsageRemaining}}}}
 		updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "usage_remaining", Value: key.UsageRemaining}}}}

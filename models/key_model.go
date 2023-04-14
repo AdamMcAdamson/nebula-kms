@@ -9,6 +9,12 @@ import (
 )
 
 // Key represents data about a KMS Key
+// @TODO: add last_used field
+// @TODO: Force quota_timestamp to the end of the current period UTC-0
+//  - i.e. 1 Day - Midnight tonight, Weekly - Midnight Sunday, etc..
+// @TODO: Run refresh usage_remaining on server startup and one Time passing Midnight UTC-0
+// @TODO: Change QuotaType to QuotaNumDays and handle accordingly
+
 type Key struct {
 	ID      primitive.ObjectID `json:"_id" bson:"_id"`
 	Key     string             `json:"key" bson:"key"`
