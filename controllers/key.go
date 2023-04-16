@@ -689,6 +689,7 @@ func RegenerateKey() gin.HandlerFunc {
 			return
 		}
 
+		// @TODO: Refactor to key_response type
 		res := struct {
 			Key       string `json:"key" bson:"key"`
 			UpdatedAt string `json:"updated_at" bson:"updated_at"`
@@ -941,6 +942,7 @@ func SetKeyQuota() gin.HandlerFunc {
 			return
 		}
 
+		// @TODO: Refactor to key_response type
 		res := struct {
 			Quota          int    `json:"quota" bson:"quota"`
 			QuotaType      string `json:"quota_type" bson:"quota_type"` // @TODO: Enum (?) (Daily, etc...)
@@ -1065,6 +1067,7 @@ func RestoreKeyQuota() gin.HandlerFunc {
 			return
 		}
 
+		// @TODO: Refactor to key_response type
 		res := struct {
 			UsageRemaining int    `json:"usage_remaining" bson:"usage_remaining"`
 			QuotaTimestamp string `json:"quota_timestamp"`
@@ -1200,6 +1203,7 @@ func ChangeKeyHolder() gin.HandlerFunc {
 			return
 		}
 
+		// @TODO: Refactor to key_response type
 		res := struct {
 			KeyID     primitive.ObjectID `json:"key_id" bson:"key_id"`
 			UpdatedAt string             `json:"updated_at" bson:"updated_at"`
@@ -1319,6 +1323,7 @@ func ChangeKeyService() gin.HandlerFunc {
 			return
 		}
 
+		// @TODO: Refactor to key_response type
 		res := struct {
 			ServiceID primitive.ObjectID `json:"serive_id" bson:"service_id"`
 			UpdatedAt string             `json:"updated_at" bson:"updated_at"`
