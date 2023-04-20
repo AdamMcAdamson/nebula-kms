@@ -9,7 +9,6 @@ import (
 )
 
 // Key represents data about a KMS Key
-// @TODO: add last_used field
 // @TODO: Force quota_timestamp to the end of the current period UTC-0
 //  - i.e. 1 Day - Midnight tonight, Weekly - Midnight Sunday, etc..
 // @TODO: Run refresh usage_remaining on server startup and one Time passing Midnight UTC-0
@@ -31,9 +30,10 @@ type Key struct {
 	ServiceID primitive.ObjectID `json:"service_id,omitempty" bson:"service_id,omitempty"`
 
 	Quota          int       `json:"quota" bson:"quota"`
-	QuotaType      string    `json:"quota_type" bson:"quota_type"` // @TODO: Enum (?) (Daily, etc...)
+	QuotaNumDays   int       `json:"quota_num_days" bson:"quota_num_days"` // @TODO: Enum (?) (Daily, etc...)
 	UsageRemaining int       `json:"usage_remaining" bson:"usage_remaining"`
 	QuotaTimestamp time.Time `json:"quota_timestamp" bson:"quota_timestamp"`
+	LastUsed       time.Time `json:"last_used" bson:"last_used"`
 	CreatedAt      time.Time `json:"created_at" bson:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" bson:"updated_at"`
 	IsActive       bool      `json:"is_active" bson:"is_active"`
@@ -43,12 +43,14 @@ func (k Key) MarshalJSON() ([]byte, error) {
 	type Alias Key
 	return json.Marshal(&struct {
 		QuotaTimestamp string `json:"quota_timestamp"`
+		LastUsed       string `json:"last_used"`
 		CreatedAt      string `json:"created_at"`
 		UpdatedAt      string `json:"updated_at"`
 		Alias
 	}{
 		// use the desired date layout
 		QuotaTimestamp: k.QuotaTimestamp.Format(configs.DateLayout),
+		LastUsed:       k.LastUsed.Format(configs.DateLayout),
 		CreatedAt:      k.CreatedAt.Format(configs.DateLayout),
 		UpdatedAt:      k.UpdatedAt.Format(configs.DateLayout),
 		Alias:          Alias(k),

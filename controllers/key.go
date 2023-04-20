@@ -65,7 +65,7 @@ func CreateBasicKey() gin.HandlerFunc {
 		key.Name = "Basic_Key"
 		key.OwnerID = userID
 		key.Quota = 100 // @TODO: Centralize const values
-		key.QuotaType = "Daily"
+		key.QuotaNumDays = 1
 		key.UsageRemaining = key.Quota
 		key.CreatedAt = time.Now().UTC()
 		key.QuotaTimestamp = key.CreatedAt
@@ -202,7 +202,7 @@ func CreateAdvancedKey() gin.HandlerFunc {
 		key.Type = "Advanced"
 		key.OwnerID = recipientUserID
 		key.ServiceID = serviceID
-		key.QuotaType = "Daily" // @TODO: Handle alternative quota types
+		key.QuotaNumDays = 1
 		key.UsageRemaining = key.Quota
 		key.CreatedAt = time.Now().UTC()
 		key.QuotaTimestamp = key.CreatedAt
@@ -827,7 +827,6 @@ func SetKeyQuota() gin.HandlerFunc {
 		var key models.Key
 
 		var quota int
-		// var quotaType string
 
 		var updatedAt time.Time
 
@@ -883,12 +882,11 @@ func SetKeyQuota() gin.HandlerFunc {
 		}
 		quota = (int)(quotaI64)
 
-		// @TODO: Handle quotaType
-		// Get quotaType
-		// quotaType, exists = c.GetQuery("quota_type")
-		// if !exists {
-		// 	c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Request must include the 'key_id' field"})
-		// 	return
+		// @TODO: Handle quota_num_days
+		// Get quotaNumDays
+		// quotaNumDays, exists = c.GetQuery("quota_num_days")
+		// if exists {
+		// 	...
 		// }
 
 		// Verify keyID is valid (key exists)
@@ -935,7 +933,7 @@ func SetKeyQuota() gin.HandlerFunc {
 		key.UpdatedAt = time.Now().UTC()
 		key.QuotaTimestamp = key.UpdatedAt
 
-		update := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: key.UpdatedAt}, {Key: "quota", Value: key.Quota}, {Key: "quota_type", Value: key.QuotaType}, {Key: "quota_timestamp", Value: key.QuotaTimestamp}, {Key: "usage_remaining", Value: key.UsageRemaining}}}}
+		update := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: key.UpdatedAt}, {Key: "quota", Value: key.Quota}, {Key: "quota_num_days", Value: key.QuotaNumDays}, {Key: "quota_timestamp", Value: key.QuotaTimestamp}, {Key: "usage_remaining", Value: key.UsageRemaining}}}}
 		_, err = keyCollection.UpdateOne(ctx, keyFilter, update)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
@@ -945,13 +943,13 @@ func SetKeyQuota() gin.HandlerFunc {
 		// @TODO: Refactor to key_response type
 		res := struct {
 			Quota          int    `json:"quota" bson:"quota"`
-			QuotaType      string `json:"quota_type" bson:"quota_type"` // @TODO: Enum (?) (Daily, etc...)
+			QuotaNumDays   int    `json:"quota_num_days" bson:"quota_num_days"`
 			UsageRemaining int    `json:"usage_remaining" bson:"usage_remaining"`
 			QuotaTimestamp string `json:"quota_timestamp"`
 			UpdatedAt      string `json:"updated_at" bson:"updated_at"`
 		}{
 			Quota:          key.Quota,
-			QuotaType:      key.QuotaType,
+			QuotaNumDays:   key.QuotaNumDays,
 			UsageRemaining: key.UsageRemaining,
 			QuotaTimestamp: key.QuotaTimestamp.Format(configs.DateLayout),
 			UpdatedAt:      key.UpdatedAt.Format(configs.DateLayout),
