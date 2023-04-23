@@ -21,7 +21,7 @@ func Allowed() gin.HandlerFunc {
 		var service models.Service
 
 		authKey := c.GetHeader("Authorization")
-		sourceIdentifier := c.GetHeader("RequestedService")
+		sourceIdentifier := c.GetHeader("Requested-service")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
