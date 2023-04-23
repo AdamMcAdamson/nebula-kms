@@ -3,13 +3,14 @@ package main
 import (
 	"github.com/UTDNebula/kms/configs"
 	"github.com/UTDNebula/kms/routes"
-
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
 
+	// Config
 	configs.InitConfig()
+	configs.RefreshUsageRemainingGoroutine()
 
 	// Configure Gin Router
 	router := gin.Default()
@@ -27,5 +28,4 @@ func main() {
 
 	// Serve Traffic
 	router.Run(portString)
-
 }
