@@ -1,3 +1,30 @@
+/**************************************************************************
+* Allowed endpoint logic.
+*
+* This validates requests to access service APIs provided by Nebula Labs
+* with a given authorization key and source identifier.
+*
+* This is achieved by finding the key document for the given 'authKey'
+* from our database, then performing a series of checks to determine if
+* access should be granted.
+*
+* The following request headers are required:
+* 'Authorization' - The authorization key.
+* 'Requested-service' - The source identifier of the requested service.
+*
+* Should the key be valid, be active, have usage remaining, and be for
+* the requested service, then access should be granted.
+*
+* The 'IsAllowed' field of the response informs whether the request
+* should be granted.
+*
+* NOTE: Basic keys are for any service of service type 'Basic' while
+*       Advanced keys are for a specific service.
+*
+* Written by Adam Brunn (amb150230) at The University of Texas at Dallas
+* for CS4485.0W1 (Nebula Platform CS Project) starting March 10, 2023.
+**************************************************************************/
+
 package controllers
 
 import (
@@ -15,32 +42,9 @@ import (
 )
 
 /**************************************************************************
-* Allowed endpoint logic.
-*
-* This validates requests to access service APIs provided by Nebula Labs
-* with a given authorization key and source identifier.
-*
-* The following request headers are required:
-* 'Authorization' - The authorization key.
-* 'Requested-service' - The source identifier of the requested service.
-*
-* This is achieved by finding the key document for the given 'authKey'
-* from our database, then performing a series of checks to determine if
-* access should be granted.
-*
-* Should the key be valid, be active, have usage remaining, and be for
-* the requested service, then access should be granted.
-*
-* The 'IsAllowed' field of the response informs whether the request
-* should be granted.
-*
-* NOTE: Basic keys are for any service of service type 'Basic' while
-*       Advanced keys are for a specific service.
-*
-* Written by Adam Brunn (amb150230) at The University of Texas at Dallas
-* starting March 10, 2023.
+* Allowed endpoint function as described above. This returns a
+* gin.HandlerFunc which is called as descibed in routes/allowed.go
 **************************************************************************/
-
 func Allowed() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
