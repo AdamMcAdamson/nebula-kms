@@ -40,7 +40,7 @@ func GenerateKey() string {
 	return sb.String()
 }
 
-func RefreshQuotaOperation() {
+func RefreshUsageRemainingOperation() {
 
 	keyCollection := GetCollection(DB, "keys")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
