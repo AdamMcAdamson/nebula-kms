@@ -94,7 +94,6 @@ func Allowed() gin.HandlerFunc {
 
 		key.UsageRemaining -= 1
 
-		// @TODO: Implement logging and push this to after we tell the gateway that the key is allowed
 		// Update key's usage remaining
 		// updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}, {Key: "usage_remaining", Value: key.UsageRemaining}}}}
 		updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "usage_remaining", Value: key.UsageRemaining}, {Key: "last_used", Value: time.Now()}}}}
@@ -104,7 +103,6 @@ func Allowed() gin.HandlerFunc {
 			return
 		}
 
-		// @TODO: Implement logging and push this to before we update the key's information
 		// Authorization Granted
 		c.JSON(http.StatusOK, responses.AllowedResponse{Status: http.StatusOK, Message: "success", IsAllowed: true})
 	}
