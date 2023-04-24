@@ -9,10 +9,6 @@ import (
 )
 
 // Key represents data about a KMS Key
-// @TODO: Force quota_timestamp to the end of the current period UTC-0
-//  - i.e. 1 Day - Midnight tonight, Weekly - Midnight Sunday, etc..
-// @TODO: Run refresh usage_remaining on server startup and one Time passing Midnight UTC-0
-
 type Key struct {
 	ID      primitive.ObjectID `json:"_id" bson:"_id"`
 	Key     string             `json:"key" bson:"key"`
@@ -20,16 +16,11 @@ type Key struct {
 	Name    string             `json:"name" bson:"name"`
 	OwnerID primitive.ObjectID `json:"owner_id" bson:"owner_id"`
 
-	// @TODO: ServiceIDs needs to be an array to handle basic keys (since they can be used for either the nebula api or the platform api).
-	// ServiceIDs []primitive.ObjectID `json:"service_ids" bson:"service_ids"`
-
-	// @TODO: A more elegant solution would be to have accounts have a basic key for each type of service (i.e. Basic_Nebula_API_Key and Basic_Platform_API_Key).
-	// 			Or we can update service_type to include a 'Basic' type, which basic keys can be assumed to be associated with.
-	//			With this solution, using different models for Basic and Advanced keys would be advised
+	// @TODO: Determine if we want to use different models for Basic and Advanced keys (basic keys not containing a serviceID)
 	ServiceID primitive.ObjectID `json:"service_id,omitempty" bson:"service_id,omitempty"`
 
 	Quota          int       `json:"quota" bson:"quota"`
-	QuotaNumDays   int       `json:"quota_num_days" bson:"quota_num_days"` // @TODO: Enum (?) (Daily, etc...)
+	QuotaNumDays   int       `json:"quota_num_days" bson:"quota_num_days"`
 	UsageRemaining int       `json:"usage_remaining" bson:"usage_remaining"`
 	QuotaTimestamp time.Time `json:"quota_timestamp" bson:"quota_timestamp"`
 	LastUsed       time.Time `json:"last_used" bson:"last_used"`
