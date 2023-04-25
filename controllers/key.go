@@ -494,7 +494,7 @@ func DisableKey() gin.HandlerFunc {
 
 		// Check if user is an Admin, or a lead of the key's service
 		// @INFO: Assumes key.ServiceID is valid
-		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
+		if user.Type != "Admin" && (key.Type != "Advanced" || user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
 			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to disable this key"})
 			return
 		}
@@ -618,7 +618,7 @@ func EnableKey() gin.HandlerFunc {
 
 		// Check if user is an Admin, or a lead of the key's service
 		// @INFO: Assumes key.ServiceID is valid
-		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
+		if user.Type != "Admin" && (key.Type != "Advanced" || user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
 			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to enable this key"})
 			return
 		}
@@ -739,7 +739,7 @@ func RegenerateKey() gin.HandlerFunc {
 
 			// Check if user is an Admin, or a lead of the key's service
 			// @INFO: Assumes key.ServiceID is valid
-			if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
+			if user.Type != "Admin" && (key.Type != "Advanced" || user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
 				c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to enable this key"})
 				return
 			}
@@ -773,10 +773,14 @@ func RegenerateKey() gin.HandlerFunc {
 	}
 }
 
-// Rename Key
+/**************************************************************************
+* Rename Key
+* This enables key owners (user_id) to rename keys.
+*
+* Note: Leads and Admins can set key names when creating them if they wish.
+**************************************************************************/
 func RenameKey() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// @INFO: Only key owners can rename keys
 		// @Optimize: Refactor to try update in aggregation pipeline ASAP
 		// and investigate reason on unsuccessful update for error reporting
 
@@ -880,7 +884,14 @@ func RenameKey() gin.HandlerFunc {
 	}
 }
 
-// Set Quota for a Key
+/**************************************************************************
+* Set Key Quota
+* This enables Leads and Admins (user_id) to set key quotas.
+*
+* Admins can set key quotas for any key.
+* Leads can only set key quotas of advanced keys
+* for services they are leads for.
+**************************************************************************/
 func SetKeyQuota() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// @Optimize: Refactor to try update in aggregation pipeline ASAP
@@ -990,7 +1001,7 @@ func SetKeyQuota() gin.HandlerFunc {
 
 		// Check if user is an Admin, or a lead of the key's service
 		// @INFO: Assumes key.ServiceID is valid
-		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
+		if user.Type != "Admin" && (key.Type != "Advanced" || user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
 			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to set the quota for this key"})
 			return
 		}
@@ -1028,7 +1039,14 @@ func SetKeyQuota() gin.HandlerFunc {
 	}
 }
 
-// Restore Quota for a Key
+/**************************************************************************
+* Restore Key Quota
+* This enables Leads and Admins (user_id) to restore key quotas.
+*
+* Admins can restore key quotas for any key.
+* Leads can only restore key quotas of advanced keys
+* for services they are leads for.
+**************************************************************************/
 func RestoreKeyQuota() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// @Optimize: Refactor to try update in aggregation pipeline ASAP
@@ -1116,7 +1134,7 @@ func RestoreKeyQuota() gin.HandlerFunc {
 
 		// Check if user is an Admin, or a lead of the key's service
 		// @INFO: Assumes key.ServiceID is valid
-		if user.Type != "Admin" && (user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
+		if user.Type != "Admin" && (key.Type != "Advanced" || user.Type != "Lead" || !slices.Contains(user.Services, key.ServiceID)) {
 			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "The given user does not have the authority to set the quota for this key"})
 			return
 		}
@@ -1149,7 +1167,15 @@ func RestoreKeyQuota() gin.HandlerFunc {
 	}
 }
 
-// Change Key Holder
+/**************************************************************************
+* Change Key Holder
+* This enables Leads and Admins (assigner_user_id) to change
+* an advanced key's owner (recipient_user_id).
+*
+* Admins can change the owner of any advanced key.
+* Leads can only change the owner of advanced keys
+* for services they are leads for.
+**************************************************************************/
 func ChangeKeyHolder() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var key models.Key
@@ -1159,7 +1185,7 @@ func ChangeKeyHolder() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// Pull objectID fields from query
+		// Get assignerUserID
 		assignerUserIDQuery, exists := c.GetQuery("assigner_user_id")
 		if !exists {
 			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'assigner_user_id' field"})
@@ -1171,6 +1197,7 @@ func ChangeKeyHolder() gin.HandlerFunc {
 			return
 		}
 
+		// Get recipientUserID
 		recipientUserIDQuery, exists := c.GetQuery("recipient_user_id")
 		if !exists {
 			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'recipient_user_id' field"})
@@ -1182,6 +1209,7 @@ func ChangeKeyHolder() gin.HandlerFunc {
 			return
 		}
 
+		// Get KeyID
 		keyIDQuery, exists := c.GetQuery("key_id")
 		if !exists {
 			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
@@ -1212,6 +1240,12 @@ func ChangeKeyHolder() gin.HandlerFunc {
 				return
 			}
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			return
+		}
+
+		// Can only change holder of advanced keys
+		if key.Type != "Advanced" {
+			c.JSON(http.StatusConflict, responses.KeyResponse{Status: http.StatusConflict, Message: "error", Data: "Invalid key_id: Can only change holder of advanced keys"})
 			return
 		}
 
@@ -1283,7 +1317,14 @@ func ChangeKeyHolder() gin.HandlerFunc {
 	}
 }
 
-// Change Key Service
+/**************************************************************************
+* Change Key Service
+* This enables Leads and Admins (user_id) to change a key's service.
+*
+* Admins can change the service of any advanced key.
+* Leads can only change the service of advanced keys for services
+* they are leads for, to another service they lead.
+**************************************************************************/
 func ChangeKeyService() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var user models.User
@@ -1293,6 +1334,7 @@ func ChangeKeyService() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
+		// Get userID
 		userIDQuery, exists := c.GetQuery("user_id")
 		if !exists {
 			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'user_id' field"})
@@ -1304,6 +1346,7 @@ func ChangeKeyService() gin.HandlerFunc {
 			return
 		}
 
+		// Get keyID
 		keyIDQuery, exists := c.GetQuery("key_id")
 		if !exists {
 			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'key_id' field"})
@@ -1315,6 +1358,7 @@ func ChangeKeyService() gin.HandlerFunc {
 			return
 		}
 
+		// Get serviceID
 		serviceIDQuery, exists := c.GetQuery("service_id")
 		if !exists {
 			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'service_id' field"})
