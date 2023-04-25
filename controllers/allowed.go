@@ -64,7 +64,10 @@ func Allowed() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// @TODO: Change into aggregation pipeline instead of two finds and an update (keep in mind there are two potential paths basic on key.Type)
+		// @TODO: Change into aggregation pipeline instead of two finds and an update.
+		// keep in mind there are two potential paths basic on key.Type
+		// and that including the update (merge) within the single pipeline
+		// enables the database operation to be atomic, which is very much prefered.
 
 		// Find Key
 		err := keyCollection.FindOne(ctx, bson.D{{Key: "key", Value: authKey}}).Decode(&key)
