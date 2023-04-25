@@ -1,5 +1,5 @@
 /**************************************************************************
-* key endpoint logic.
+* Key endpoint logic.
 *
 * These endpoints process requests related to managing keys within
 * the developer portal of Nebula platform. Generally, these operations

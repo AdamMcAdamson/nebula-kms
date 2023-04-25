@@ -2,11 +2,8 @@
 * Allowed endpoint logic.
 *
 * This validates requests to access service APIs provided by Nebula Labs
-* with a given authorization key and source identifier.
-*
-* This is achieved by finding the key document for the given 'authKey'
-* from our database, then performing a series of checks to determine if
-* access should be granted.
+* with a given authorization key and source identifier. Generally, this
+* should process requests directly from Nebula Labs' api gateways.
 *
 * The following request headers are required:
 * 'Authorization' - The authorization key.
