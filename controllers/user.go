@@ -1,3 +1,22 @@
+/**************************************************************************
+* User endpoint logic.
+*
+* These endpoints process requests related to user data within
+* the developer portal of Nebula platform. Generally, these operations
+* should process requests directly from the developer portal.
+*
+* These functions each return a gin.HandlerFunc which are called
+* as descibed in routes/user.go
+*
+* Outside of user creation, these endpoints generally retrieve data for
+* the developer portal on the user's behalf.
+*
+* Reponses are built using responses/user_response.go.
+*
+* Written by Adam Brunn (amb150230) at The University of Texas at Dallas
+* for CS4485.0W1 (Nebula Platform CS Project) starting March 10, 2023.
+**************************************************************************/
+
 package controllers
 
 import (
@@ -18,20 +37,32 @@ import (
 
 var userCollection *mongo.Collection = configs.GetCollection(configs.DB, "users")
 
+/**************************************************************************
+* Get User Keys
+* This returns the user's (user_id) basic and advanced keys.
+**************************************************************************/
 func GetUserKeys() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
+		var userID primitive.ObjectID
 		var userKeys map[string]interface{}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		userID, err := primitive.ObjectIDFromHex(c.Query("user_id"))
+		// Get userID
+		userIDQuery, exists := c.GetQuery("user_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'user_id' field"})
+			return
+		}
+		userID, err := primitive.ObjectIDFromHex(userIDQuery)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, responses.UserResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
 			return
 		}
 
+		// Aggregation pipeline stages
 		matchOnUserID := bson.D{{Key: "$match", Value: bson.D{{Key: "_id", Value: userID}}}}
 		lookupAdvancedKeys := bson.D{{Key: "$lookup", Value: bson.D{{Key: "from", Value: "keys"}, {Key: "localField", Value: "advanced_keys"}, {Key: "foreignField", Value: "_id"}, {Key: "as", Value: "advanced_keys"}}}}
 		lookupBasicKey := bson.D{{Key: "$lookup", Value: bson.D{{Key: "from", Value: "keys"}, {Key: "localField", Value: "basic_key"}, {Key: "foreignField", Value: "_id"}, {Key: "as", Value: "basic_key"}}}}
@@ -40,50 +71,85 @@ func GetUserKeys() gin.HandlerFunc {
 
 		aggregationPipeline := bson.A{matchOnUserID, lookupAdvancedKeys, lookupBasicKey, unwindBasicKey, projectKeys}
 
+		// Preform aggregation
 		cursor, err := userCollection.Aggregate(ctx, aggregationPipeline)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
 			return
 		}
+
+		// If there is no next document, the user does not exist
 		if !cursor.Next(ctx) {
 			c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid user_id: User does not exist"})
 			return
 		}
+
+		// Decode keys
 		err = cursor.Decode(&userKeys)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
 			return
 		}
+
+		// Respond
 		c.JSON(http.StatusOK, responses.UserResponse{Status: http.StatusOK, Message: "success", Data: userKeys})
 	}
 }
 
+/**************************************************************************
+* Get User Type
+* This returns the user's (user_id) type ("Developer", "Lead", "Admin").
+**************************************************************************/
 func GetUserType() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
+		var userID primitive.ObjectID
 		var user models.User
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		userID, err := primitive.ObjectIDFromHex(c.Query("user_id"))
+		// Get userID
+		userIDQuery, exists := c.GetQuery("user_id")
+		if !exists {
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include the 'user_id' field"})
+			return
+		}
+		userID, err := primitive.ObjectIDFromHex(userIDQuery)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, responses.UserResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
+			c.JSON(http.StatusBadRequest, responses.KeyResponse{Status: http.StatusBadRequest, Message: "error", Data: err.Error()})
 			return
 		}
 
+		// Get user
 		err = userCollection.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, responses.UserResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
+			if err == mongo.ErrNoDocuments {
+				c.JSON(http.StatusNotFound, responses.KeyResponse{Status: http.StatusNotFound, Message: "error", Data: "Invalid user_id: User does not exist"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, responses.KeyResponse{Status: http.StatusInternalServerError, Message: "error", Data: err.Error()})
 			return
 		}
 
+		// Respond
 		c.JSON(http.StatusOK, responses.UserResponse{Status: http.StatusOK, Message: "success", Data: user.Type})
 	}
 }
 
+/**************************************************************************
+* Get Priviledge User Data
+* This returns the priviledged data the user (user_id) has permissions
+* to view concerning other users, keys, and services.
+*
+* Admins can see the aggregation of all services to keys to users.
+* Leads can see the aggregtion of services the lead to keys to users,
+* while hiding the actual keys.
+**************************************************************************/
 func GetPrivilegedUserData() gin.HandlerFunc {
 	return func(c *gin.Context) {
+
+		// @TODO: Extend Admin Aggregation pipeline to also grab keys for basic services
 
 		var user models.User
 
@@ -117,10 +183,10 @@ func GetPrivilegedUserData() gin.HandlerFunc {
 			return
 		}
 
-		// Admin Aggregation Only
+		// Admin Aggregation Pipeline Only
 		projectServiceDetails := bson.D{{Key: "$project", Value: bson.D{{Key: "services._id", Value: "$_id"}, {Key: "services.service_name", Value: "$service_name"}, {Key: "services.service_type", Value: "$service_type"}, {Key: "services.created_at", Value: "$created_at"}, {Key: "services.updated_at", Value: "$updated_at"}, {Key: "services.source_identifiers", Value: "$source_identifiers"}}}}
 
-		// Lead Aggregation Only
+		// Lead Aggregation Pipeline Only
 		matchLead := bson.D{{Key: "$match", Value: bson.D{{Key: "_id", Value: userID}}}}
 		lookupServices := bson.D{{Key: "$lookup", Value: bson.D{{Key: "from", Value: "services"}, {Key: "localField", Value: "services"}, {Key: "foreignField", Value: "_id"}, {Key: "as", Value: "services"}}}}
 		projectServices := bson.D{{Key: "$project", Value: bson.D{{Key: "services", Value: 1}}}}
@@ -128,7 +194,7 @@ func GetPrivilegedUserData() gin.HandlerFunc {
 		// -- LookupKeys
 		projectKeysLead := bson.D{{Key: "$project", Value: bson.D{{Key: "services._id", Value: 1}, {Key: "services.service_name", Value: 1}, {Key: "services.service_type", Value: 1}, {Key: "services.created_at", Value: 1}, {Key: "services.updated_at", Value: 1}, {Key: "services.source_identifiers", Value: 1}, {Key: "keys._id", Value: 1}, {Key: "keys.key", Value: "_HIDDEN_"}, {Key: "keys.key_type", Value: 1}, {Key: "keys.name", Value: 1}, {Key: "keys.owner_id", Value: 1}, {Key: "keys.service_id", Value: 1}, {Key: "keys.quota", Value: 1}, {Key: "keys.quota_type", Value: 1}, {Key: "keys.usage_remaining", Value: 1}, {Key: "keys.quota_timestamp", Value: 1}, {Key: "keys.created_at", Value: 1}, {Key: "keys.updated_at", Value: 1}, {Key: "keys.is_active", Value: 1}}}}
 
-		// Both Lead and Admin Aggregation
+		// Both Lead and Admin Aggregation Pipelines
 		lookupKeys := bson.D{{Key: "$lookup", Value: bson.D{{Key: "from", Value: "keys"}, {Key: "localField", Value: "services._id"}, {Key: "foreignField", Value: "service_id"}, {Key: "as", Value: "keys"}}}}
 		unwindKeys := bson.D{{Key: "$unwind", Value: bson.D{{Key: "path", Value: "$keys"}, {Key: "preserveNullAndEmptyArrays", Value: true}}}}
 		lookupOwner := bson.D{{Key: "$lookup", Value: bson.D{{Key: "from", Value: "users"}, {Key: "localField", Value: "keys.owner_id"}, {Key: "foreignField", Value: "_id"}, {Key: "as", Value: "owner"}}}}
@@ -190,10 +256,20 @@ func GetPrivilegedUserData() gin.HandlerFunc {
 			// Grab aggregation result
 			out = res[0]["services"]
 		}
+
+		// Respond
 		c.JSON(http.StatusOK, responses.UserResponse{Status: http.StatusOK, Message: "success", Data: out})
 	}
 }
 
+/**************************************************************************
+* Create User
+* This creates a user in the kms/developer portal backend given their
+* platform_user_id. This should be grabbed from Nebula SSO.
+*
+* Generally this should be called by the developer portal backend
+* once the user wishes to access it's features.
+**************************************************************************/
 func CreateUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
@@ -230,7 +306,7 @@ func CreateUser() gin.HandlerFunc {
 			var e mongo.WriteException
 			if errors.As(err, &e) {
 				for _, we := range e.WriteErrors {
-					if we.Code == 11000 {
+					if we.Code == 11000 { // Not unique platform_user_id
 						c.JSON(http.StatusConflict, responses.UserResponse{Status: http.StatusConflict, Message: "error", Data: "The given platform_user_id is already associated with a KMS user"})
 						return
 					}

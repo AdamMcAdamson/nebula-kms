@@ -1,3 +1,27 @@
+/**************************************************************************
+* Allowed endpoint logic.
+*
+* This validates requests to access service APIs provided by Nebula Labs
+* with a given authorization key and source identifier. Generally, this
+* should process requests directly from Nebula Labs' api gateways.
+*
+* The following request headers are required:
+* 'Authorization' - The authorization key.
+* 'Requested-service' - The source identifier of the requested service.
+*
+* Should the key be valid, be active, have usage remaining, and be for
+* the requested service, then access should be granted.
+*
+* The 'IsAllowed' field of the response informs whether the request
+* should be granted.
+*
+* NOTE: Basic keys are for any service of service type 'Basic' while
+*       Advanced keys are for a specific service.
+*
+* Written by Adam Brunn (amb150230) at The University of Texas at Dallas
+* for CS4485.0W1 (Nebula Platform CS Project) starting March 10, 2023.
+**************************************************************************/
+
 package controllers
 
 import (
@@ -14,6 +38,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+/**************************************************************************
+* Allowed endpoint function as described above. This returns a
+* gin.HandlerFunc which is called as descibed in routes/allowed.go
+**************************************************************************/
 func Allowed() gin.HandlerFunc {
 	return func(c *gin.Context) {
 
@@ -23,11 +51,11 @@ func Allowed() gin.HandlerFunc {
 		authKey := c.GetHeader("Authorization")
 		sourceIdentifier := c.GetHeader("Requested-service")
 
+		// Missing required headers
 		if authKey == "" {
 			c.JSON(http.StatusBadRequest, responses.AllowedResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include Authorization header", IsAllowed: false})
 			return
 		}
-
 		if sourceIdentifier == "" {
 			c.JSON(http.StatusBadRequest, responses.AllowedResponse{Status: http.StatusBadRequest, Message: "error", Data: "Request must include Requested-service header", IsAllowed: false})
 			return
@@ -36,7 +64,10 @@ func Allowed() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// @TODO: Change into aggregation pipeline instead of two finds and an update (keep in mind there are two potential paths basic on key.Type)
+		// @TODO: Change into aggregation pipeline instead of two finds and an update.
+		// keep in mind there are two potential paths basic on key.Type
+		// and that including the update (merge) within the single pipeline
+		// enables the database operation to be atomic, which is very much prefered.
 
 		// Find Key
 		err := keyCollection.FindOne(ctx, bson.D{{Key: "key", Value: authKey}}).Decode(&key)
@@ -51,11 +82,13 @@ func Allowed() gin.HandlerFunc {
 			return
 		}
 
+		// Key has no usage remaining
 		if key.UsageRemaining <= 0 {
 			c.JSON(http.StatusOK, responses.AllowedResponse{Status: http.StatusOK, Message: "Quota reached", IsAllowed: false})
 			return
 		}
 
+		// Key is not active
 		if !key.IsActive {
 			c.JSON(http.StatusOK, responses.AllowedResponse{Status: http.StatusOK, Message: "Key is disabled", IsAllowed: false})
 			return
@@ -92,10 +125,8 @@ func Allowed() gin.HandlerFunc {
 			}
 		}
 
-		key.UsageRemaining -= 1
-
 		// Update key's usage remaining
-		// updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "updated_at", Value: time.Now()}, {Key: "usage_remaining", Value: key.UsageRemaining}}}}
+		key.UsageRemaining -= 1
 		updateKey := bson.D{{Key: "$set", Value: bson.D{{Key: "usage_remaining", Value: key.UsageRemaining}, {Key: "last_used", Value: time.Now()}}}}
 		_, err = keyCollection.UpdateOne(ctx, bson.D{{Key: "_id", Value: key.ID}}, updateKey)
 		if err != nil {
